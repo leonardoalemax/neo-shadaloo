@@ -1,0 +1,14 @@
+name: base
+
+services:
+    neo-shadaloo:
+        container_name: ${PREFIX}-neo-shadaloo
+        build:
+            context: ..
+        ports:
+            - "6678:8080"
+        restart: unless-stopped
+        environment:
+            DATABASE_URL: ${DATABASE_URL}
+            SF6_COOKIE: ${SF6_COOKIE}
+            PORT: "8080"

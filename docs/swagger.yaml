@@ -1,0 +1,262 @@
+basePath: /
+definitions:
+  battlelog.Battlelog:
+    properties:
+      bannerInfo:
+        $ref: '#/definitions/battlelog.FighterBannerInfo'
+      cachedAt:
+        type: integer
+      replays:
+        items:
+          $ref: '#/definitions/battlelog.Replay'
+        type: array
+      userId:
+        type: string
+    type: object
+  battlelog.FavoriteCharacterLeagueInfo:
+    properties:
+      league_point:
+        type: integer
+      league_rank:
+        type: integer
+      league_rank_info:
+        $ref: '#/definitions/battlelog.LeagueRankInfo'
+      master_league:
+        type: integer
+      master_rating:
+        type: integer
+      master_rating_ranking:
+        type: integer
+    type: object
+  battlelog.FighterBannerInfo:
+    properties:
+      favorite_character_alpha:
+        type: string
+      favorite_character_league_info:
+        $ref: '#/definitions/battlelog.FavoriteCharacterLeagueInfo'
+      favorite_character_name:
+        type: string
+      favorite_character_play_point:
+        $ref: '#/definitions/battlelog.PlayPoint'
+      favorite_character_tool_name:
+        type: string
+      personal_info:
+        $ref: '#/definitions/battlelog.PersonalInfo'
+      profile_comment:
+        $ref: '#/definitions/battlelog.ProfileComment'
+      title_data:
+        $ref: '#/definitions/battlelog.TitleData'
+    type: object
+  battlelog.LeagueRankInfo:
+    properties:
+      league_rank_name:
+        type: string
+      league_rank_number:
+        type: integer
+    type: object
+  battlelog.PersonalInfo:
+    properties:
+      fighter_id:
+        type: string
+      platform_name:
+        type: string
+      platform_tool_name:
+        type: string
+      short_id:
+        type: integer
+    type: object
+  battlelog.PlayPoint:
+    properties:
+      battle_hub:
+        type: integer
+      fighting_ground:
+        type: integer
+      world_tour:
+        type: integer
+    type: object
+  battlelog.PlayerInfo:
+    properties:
+      allow_cross_play:
+        type: boolean
+      battle_input_type:
+        type: integer
+      battle_input_type_name:
+        type: string
+      character_id:
+        type: integer
+      character_name:
+        type: string
+      character_tool_name:
+        type: string
+      league_point:
+        type: integer
+      league_rank:
+        type: integer
+      player:
+        $ref: '#/definitions/battlelog.PlayerRef'
+      playing_character_id:
+        type: integer
+      playing_character_name:
+        type: string
+      playing_character_tool_name:
+        type: string
+      round_results:
+        items:
+          type: integer
+        type: array
+    type: object
+  battlelog.PlayerRef:
+    properties:
+      fighter_id:
+        type: string
+      platform_id:
+        type: integer
+      platform_name:
+        type: string
+      platform_tool_name:
+        type: string
+      short_id:
+        type: integer
+    type: object
+  battlelog.ProfileComment:
+    properties:
+      profile_tag_name:
+        type: string
+    type: object
+  battlelog.Replay:
+    properties:
+      player1_info:
+        $ref: '#/definitions/battlelog.PlayerInfo'
+      player2_info:
+        $ref: '#/definitions/battlelog.PlayerInfo'
+      replay_battle_sub_type_name:
+        type: string
+      replay_battle_type:
+        type: integer
+      replay_battle_type_name:
+        type: string
+      replay_id:
+        type: string
+      uploaded_at:
+        type: integer
+      views:
+        type: integer
+    type: object
+  battlelog.TitleData:
+    properties:
+      title_data_plate_name:
+        type: string
+      title_data_val:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: Leo Alemax
+  description: Caching proxy between the Street Fighter 6 Buckler API and PostgreSQL.
+    Serves cached battlelog data instantly and syncs with SF6 asynchronously in the
+    background.
+  title: neo-shadaloo API
+  version: "1.0"
+paths:
+  /v1/battlelog/{userId}:
+    get:
+      description: Returns the cached battlelog from the database. If the cache is
+        stale (>5 min), a background sync with the SF6 API is triggered without blocking
+        the response. If no data exists yet, an empty replay list is returned and
+        sync is triggered.
+      parameters:
+      - description: SF6 fighter ID
+        example: "3378249682"
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/battlelog.Battlelog'
+        "400":
+          description: userId required
+          schema:
+            type: string
+        "500":
+          description: internal server error
+          schema:
+            type: string
+      summary: Get battlelog for a user
+      tags:
+      - battlelog
+  /v1/battlelog/{userId}/sync:
+    post:
+      description: Triggers an immediate background sync with the SF6 API for the
+        given user, regardless of cache freshness. Returns 202 immediately; the sync
+        runs asynchronously and notifies connected WebSocket clients when complete.
+      parameters:
+      - description: SF6 fighter ID
+        example: "3378249682"
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: sync started
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: userId required
+          schema:
+            type: string
+      summary: Force a battlelog sync
+      tags:
+      - battlelog
+  /v1/battlelog/{userId}/ws:
+    get:
+      description: Upgrades the connection to WebSocket. The server sends a JSON message
+        `{"type":"update","cachedAt":<ms>}` whenever a sync completes for this user.
+        The client should re-fetch `/v1/battlelog/{userId}` on receipt. A ping is
+        sent every 30 seconds to keep the connection alive.
+      parameters:
+      - description: SF6 fighter ID
+        example: "3378249682"
+        in: path
+        name: userId
+        required: true
+        type: string
+      responses:
+        "101":
+          description: Switching Protocols
+        "400":
+          description: userId required
+          schema:
+            type: string
+      summary: Subscribe to real-time battlelog updates
+      tags:
+      - battlelog
+  /v1/health:
+    get:
+      description: Returns 200 if the server is running.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - system
+schemes:
+- http
+- ws
+swagger: "2.0"
