@@ -89,6 +89,14 @@ type FighterBannerInfo struct {
 	ProfileComment              ProfileComment              `json:"profile_comment"`
 }
 
+// ReplayPage is the paginated response for the replays endpoint.
+type ReplayPage struct {
+	Replays    []Replay `json:"replays"`
+	Total      int      `json:"total"`
+	Page       int      `json:"page"`
+	TotalPages int      `json:"total_pages"`
+}
+
 // ── Aggregate Root ───────────────────────────────────────────────────────────
 
 const staleTTL = 5 * 60 * 1000 // 5 minutes in milliseconds

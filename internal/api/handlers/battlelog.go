@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -105,5 +106,57 @@ func Health() http.HandlerFunc {
 	}
 }
 
-// Ensure domain.Battlelog is picked up by swag even though it's not in this package.
+// GetReplaysPage godoc
+//
+//	@Summary		Get paginated replays for a user
+//	@Description	Returns a paginated list of replays from the cached battlelog. Triggers a background sync if the cache is stale. Query params: page (default 1), limit (default 20, max 100).
+//	@Tags			battlelog
+//	@Produce		json
+//	@Param			userId	path		string				true	"SF6 fighter ID"	example(3378249682)
+//	@Param			page	query		int					false	"Page number"		default(1)
+//	@Param			limit	query		int					false	"Items per page"	default(20)
+//	@Success		200		{object}	domain.ReplayPage
+//	@Failure		400		{string}	string	"userId required"
+//	@Failure		500		{string}	string	"internal server error"
+//	@Router			/v1/battlelog/{userId}/replays [get]
+func GetReplaysPage(svc *app.BattlelogService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := chi.URLParam(r, "userId")
+		if userID == "" {
+			http.Error(w, "userId required", http.StatusBadRequest)
+			return
+		}
+
+		page := 1
+		if p := r.URL.Query().Get("page"); p != "" {
+			if v, err := strconv.Atoi(p); err == nil && v > 0 {
+				page = v
+			}
+		}
+
+		limit := 20
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if v, err := strconv.Atoi(l); err == nil && v > 0 {
+				if v > 100 {
+					v = 100
+				}
+				limit = v
+			}
+		}
+
+		rp, err := svc.GetReplaysPage(r.Context(), userID, page, limit)
+		if err != nil {
+			log.Printf("[handler] GetReplaysPage error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(rp)
+	}
+}
+
+// Ensure domain types are picked up by swag even though they're not in this package.
 var _ = domain.Battlelog{}
+var _ = domain.ReplayPage{}

@@ -53,6 +53,37 @@ func (s *BattlelogService) GetBattlelog(ctx context.Context, userID string) (*do
 	return bl, nil
 }
 
+// GetReplaysPage returns a paginated slice of replays from the cached battlelog.
+// It reuses GetBattlelog, so stale-cache detection and background sync apply as usual.
+func (s *BattlelogService) GetReplaysPage(ctx context.Context, userID string, page, limit int) (*domain.ReplayPage, error) {
+	bl, err := s.GetBattlelog(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	total := len(bl.Replays)
+	totalPages := (total + limit - 1) / limit
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
+	start := (page - 1) * limit
+	if start > total {
+		start = total
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+
+	return &domain.ReplayPage{
+		Replays:    bl.Replays[start:end],
+		Total:      total,
+		Page:       page,
+		TotalPages: totalPages,
+	}, nil
+}
+
 // TriggerSync starts a background sync for userID only if none is already running.
 func (s *BattlelogService) TriggerSync(userID string) {
 	s.mu.Lock()

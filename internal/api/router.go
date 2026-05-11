@@ -19,6 +19,7 @@ func NewRouter(svc *app.BattlelogService, hub *realtime.Hub) http.Handler {
 
 	r.Get("/v1/health", handlers.Health())
 	r.Get("/v1/battlelog/{userId}", handlers.GetBattlelog(svc))
+	r.Get("/v1/battlelog/{userId}/replays", handlers.GetReplaysPage(svc))
 	r.Post("/v1/battlelog/{userId}/sync", handlers.PostSync(svc))
 	r.Get("/v1/battlelog/{userId}/ws", handlers.GetWS(hub))
 
