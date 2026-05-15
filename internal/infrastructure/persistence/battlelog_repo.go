@@ -57,6 +57,24 @@ func (r *battlelogRepository) GetByUserID(ctx context.Context, userID string) (*
 	}, nil
 }
 
+func (r *battlelogRepository) ListAllUserIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT user_id FROM user_battlelog`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 func (r *battlelogRepository) Save(ctx context.Context, b *domain.Battlelog) error {
 	replaysJSON, err := json.Marshal(b.Replays)
 	if err != nil {

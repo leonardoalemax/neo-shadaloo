@@ -40,7 +40,7 @@ type Client struct {
 	http    *http.Client
 }
 
-func NewClient(cfgRepo domainconfig.ConfigRepository) domain.SF6Client {
+func NewClient(cfgRepo domainconfig.ConfigRepository) *Client {
 	return &Client{
 		buildID: newBuildIDManager(cfgRepo, userAgent),
 		http:    http.DefaultClient,
