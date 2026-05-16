@@ -57,6 +57,239 @@
                 }
             }
         },
+        "/v1/battlelog/{userId}/calendar": {
+            "get": {
+                "description": "Returns battles grouped by calendar day (YYYY-MM-DD) and by weekday (0=Sun..6=Sat).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "battlelog"
+                ],
+                "summary": "Get calendar heatmap data for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "3378249682",
+                        "description": "SF6 fighter ID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/battlelog.CalendarStat"
+                        }
+                    },
+                    "400": {
+                        "description": "userId required",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/battlelog/{userId}/opponents": {
+            "get": {
+                "description": "Returns stats grouped by opponent character, sorted by total battles descending. Includes priority score for training recommendations.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "battlelog"
+                ],
+                "summary": "Get per-opponent-character stats for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "3378249682",
+                        "description": "SF6 fighter ID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/battlelog.CharStat"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "userId required",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/battlelog/{userId}/profile": {
+            "get": {
+                "description": "Returns only the fighter banner info from the cached battlelog. Lighter alternative to the full battlelog endpoint.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "battlelog"
+                ],
+                "summary": "Get profile/banner info for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "3378249682",
+                        "description": "SF6 fighter ID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/battlelog.FighterBannerInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "userId required",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "no profile data yet",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/battlelog/{userId}/replays": {
+            "get": {
+                "description": "Returns a paginated list of replays from the cached battlelog. Triggers a background sync if the cache is stale. Query params: page (default 1), limit (default 20, max 100).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "battlelog"
+                ],
+                "summary": "Get paginated replays for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "3378249682",
+                        "description": "SF6 fighter ID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Items per page",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/battlelog.ReplayPage"
+                        }
+                    },
+                    "400": {
+                        "description": "userId required",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/battlelog/{userId}/stats": {
+            "get": {
+                "description": "Returns aggregated win/loss statistics computed from the cached battlelog.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "battlelog"
+                ],
+                "summary": "Get win/loss stats for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "3378249682",
+                        "description": "SF6 fighter ID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/battlelog.WinLossStat"
+                        }
+                    },
+                    "400": {
+                        "description": "userId required",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/battlelog/{userId}/sync": {
             "post": {
                 "description": "Triggers an immediate background sync with the SF6 API for the given user, regardless of cache freshness. Returns 202 immediately; the sync runs asynchronously and notifies connected WebSocket clients when complete.",
@@ -168,6 +401,66 @@
                 },
                 "userId": {
                     "type": "string"
+                }
+            }
+        },
+        "battlelog.CalendarStat": {
+            "type": "object",
+            "properties": {
+                "by_day": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/battlelog.DayStat"
+                    }
+                },
+                "by_weekday": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/battlelog.DayStat"
+                    }
+                }
+            }
+        },
+        "battlelog.CharStat": {
+            "type": "object",
+            "properties": {
+                "clean_losses": {
+                    "type": "integer"
+                },
+                "close_losses": {
+                    "type": "integer"
+                },
+                "losses": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "priority_score": {
+                    "type": "number"
+                },
+                "tool_name": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "win_rate": {
+                    "type": "integer"
+                },
+                "wins": {
+                    "type": "integer"
+                }
+            }
+        },
+        "battlelog.DayStat": {
+            "type": "object",
+            "properties": {
+                "total": {
+                    "type": "integer"
+                },
+                "wins": {
+                    "type": "integer"
                 }
             }
         },
@@ -369,6 +662,26 @@
                 }
             }
         },
+        "battlelog.ReplayPage": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "replays": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/battlelog.Replay"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
         "battlelog.TitleData": {
             "type": "object",
             "properties": {
@@ -377,6 +690,23 @@
                 },
                 "title_data_val": {
                     "type": "string"
+                }
+            }
+        },
+        "battlelog.WinLossStat": {
+            "type": "object",
+            "properties": {
+                "losses": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "win_pct": {
+                    "type": "integer"
+                },
+                "wins": {
+                    "type": "integer"
                 }
             }
         }
