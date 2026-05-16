@@ -16,22 +16,36 @@ const (
 	TopicLeagueSync  = "league-sync-pages"
 )
 
-// EnsureTopicNamed cria um topic arbitrário com N partições.
+// EnsureTopicNamed cria um topic se não existir, OU expande partições se
+// já existir com menos partições do que `partitions`. Kafka só permite
+// aumentar partições — nunca diminuir.
 func EnsureTopicNamed(ctx context.Context, topic string, partitions int) error {
-	conn, err := kafka.DialLeader(ctx, "tcp", BrokerAddr(), topic, 0)
+	ctrlConn, err := kafka.Dial("tcp", BrokerAddr())
 	if err != nil {
-		ctrlConn, cErr := kafka.Dial("tcp", BrokerAddr())
-		if cErr != nil {
-			return fmt.Errorf("kafka dial: %w", cErr)
-		}
-		defer ctrlConn.Close()
+		return fmt.Errorf("kafka dial: %w", err)
+	}
+	defer ctrlConn.Close()
+
+	parts, err := ctrlConn.ReadPartitions(topic)
+	if err != nil || len(parts) == 0 {
+		// topic não existe — cria
+		log.Printf("[kafka] criando topic %s com %d partições", topic, partitions)
 		return ctrlConn.CreateTopics(kafka.TopicConfig{
 			Topic:             topic,
 			NumPartitions:     partitions,
 			ReplicationFactor: 1,
 		})
 	}
-	conn.Close()
+
+	if len(parts) >= partitions {
+		log.Printf("[kafka] topic %s já tem %d partições (>= %d desejadas)", topic, len(parts), partitions)
+		return nil
+	}
+
+	log.Printf("[kafka] ⚠️  topic %s tem só %d partições mas queremos %d. "+
+		"Workers extras ficarão IDLE. Pra expandir, rode no broker: "+
+		"kafka-topics.sh --bootstrap-server localhost:9092 --alter --topic %s --partitions %d",
+		topic, len(parts), partitions, topic, partitions)
 	return nil
 }
 

@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	workerCount = 5
+	workerCount = 20
 	retryPause  = 5 * time.Minute
 )
 
