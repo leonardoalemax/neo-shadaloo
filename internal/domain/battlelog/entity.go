@@ -80,6 +80,7 @@ type PersonalInfo struct {
 }
 
 type FighterBannerInfo struct {
+	HomeID                      int                         `json:"home_id"`
 	PersonalInfo                PersonalInfo                `json:"personal_info"`
 	FavoriteCharacterName       string                      `json:"favorite_character_name"`
 	FavoriteCharacterAlpha      string                      `json:"favorite_character_alpha"`
