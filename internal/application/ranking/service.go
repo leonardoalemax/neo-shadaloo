@@ -204,47 +204,51 @@ func (s *Service) consumeLoop(ctx context.Context, workerID int) {
 	}
 }
 
-// progresso tracking por ranking_type
-var progressCounters sync.Map // map[RankingType]*atomic.Int64
+// progressTickers conta msgs processadas localmente só pra decidir QUANDO
+// atualizar meta (a cada 50 msgs). O VALOR salvo vem do banco.
+var progressTickers sync.Map // map[RankingType]*atomic.Int64
 
 func (s *Service) updateProgress(ctx context.Context, rt domain.RankingType, pm kafkainfra.PageMessage) {
 	key := string(rt)
-	val, _ := progressCounters.LoadOrStore(key, &atomic.Int64{})
-	counter := val.(*atomic.Int64)
-	current := counter.Add(1)
+	val, _ := progressTickers.LoadOrStore(key, &atomic.Int64{})
+	tick := val.(*atomic.Int64).Add(1)
 
-	// Atualiza meta a cada 100 páginas
-	if current%100 == 0 || int(current) >= pm.TotalPages-1 {
-		_ = s.repo.SaveMeta(ctx, domain.SnapshotMeta{
-			RankingType: rt,
-			TotalCount:  pm.TotalCount,
-			TotalPages:  pm.TotalPages,
-			SyncedPages: int(current) + 1, // +1 pela página 1
-			UpdatedAt:   time.Now().Unix(),
-			StartedAt:   pm.StartedAt,
-			Status:      "running",
-		})
-		log.Printf("[ranking] %s: progresso %d/%d páginas (%.1f%%)",
-			rt, current+1, pm.TotalPages, float64(current+1)/float64(pm.TotalPages)*100)
+	// Atualiza meta a cada 50 msgs processadas
+	if tick%50 != 0 {
+		return
 	}
 
-	// Sync completo?
-	if int(current) >= pm.TotalPages-1 {
-		finishedAt := time.Now().Unix()
-		_ = s.repo.SaveMeta(ctx, domain.SnapshotMeta{
-			RankingType:  rt,
-			TotalCount:   pm.TotalCount,
-			TotalPages:   pm.TotalPages,
-			SyncedPages:  pm.TotalPages,
-			UpdatedAt:    finishedAt,
-			StartedAt:    pm.StartedAt,
-			LastSyncedAt: finishedAt,
-			Status:       "done",
-		})
-		log.Printf("[ranking] %s: sync COMPLETO", rt)
+	synced, err := s.repo.CountSyncedPages(ctx, rt)
+	if err != nil {
+		log.Printf("[ranking] %s: count synced pages erro: %v", rt, err)
+		return
+	}
 
-		// Limpa estado
-		progressCounters.Delete(key)
+	status := "running"
+	finishedAt := int64(0)
+	complete := synced >= pm.TotalPages
+	if complete {
+		status = "done"
+		finishedAt = time.Now().Unix()
+	}
+
+	_ = s.repo.SaveMeta(ctx, domain.SnapshotMeta{
+		RankingType:  rt,
+		TotalCount:   pm.TotalCount,
+		TotalPages:   pm.TotalPages,
+		SyncedPages:  synced,
+		UpdatedAt:    time.Now().Unix(),
+		StartedAt:    pm.StartedAt,
+		LastSyncedAt: finishedAt,
+		Status:       status,
+	})
+
+	log.Printf("[ranking] %s: progresso %d/%d páginas (%.1f%%)",
+		rt, synced, pm.TotalPages, float64(synced)/float64(pm.TotalPages)*100)
+
+	if complete {
+		log.Printf("[ranking] %s: sync COMPLETO", rt)
+		progressTickers.Delete(key)
 		s.mu.Lock()
 		delete(s.running, rt)
 		s.mu.Unlock()

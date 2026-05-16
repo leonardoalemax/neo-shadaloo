@@ -12,9 +12,11 @@ const (
 	RankingMaster  RankingType = "master_rating"  // Avaliação de Mestre
 )
 
-// AllRankingTypes lista todos os rankings que sincronizamos.
+// AllRankingTypes lista os rankings sincronizados pelo Service genérico.
+// - RankingKudos: removido até descobrirmos a URL correta no SF6.
+// - RankingLeague: tem seu próprio service (application/league) com tabela dedicada.
 func AllRankingTypes() []RankingType {
-	return []RankingType{RankingLeague, RankingArcade, RankingKudos, RankingMaster}
+	return []RankingType{RankingArcade, RankingMaster}
 }
 
 // Entry é uma posição de um jogador (com seu personagem) em um ranking.

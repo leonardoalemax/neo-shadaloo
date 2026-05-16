@@ -25,6 +25,7 @@ import (
 	"neo-shadaloo/internal/api"
 	app "neo-shadaloo/internal/application/battlelog"
 	appfighting "neo-shadaloo/internal/application/fighting"
+	appleague "neo-shadaloo/internal/application/league"
 	appranking "neo-shadaloo/internal/application/ranking"
 	appusage "neo-shadaloo/internal/application/usage"
 	"neo-shadaloo/internal/infrastructure/persistence"
@@ -78,6 +79,7 @@ func main() {
 	usageRepo := persistence.NewUsageRepository(persistence.Pool)
 	fightingRepo := persistence.NewFightingRepository(persistence.Pool)
 	rankingRepo := persistence.NewRankingRepository(persistence.Pool)
+	leagueRepo := persistence.NewLeagueRepository(persistence.Pool)
 	hub := realtime.NewHub()
 	sf6Client := sf6.NewClient(cfgRepo)
 
@@ -86,14 +88,18 @@ func main() {
 	usageSvc := appusage.NewUsageService(usageRepo, sf6Client)
 	fightingSvc := appfighting.NewFightingService(fightingRepo, sf6Client)
 	rankingSvc := appranking.NewService(rankingRepo, sf6Client, playerIndexRepo)
+	leagueSvc := appleague.NewService(leagueRepo, sf6Client, playerIndexRepo)
 
 	// ── Kafka consumers ──────────────────────────────────────────────────────
 	if err := rankingSvc.InitKafka(ctx); err != nil {
-		log.Printf("Kafka init warning (ranking sync will use in-memory fallback): %v", err)
+		log.Printf("Kafka init warning (ranking sync): %v", err)
+	}
+	if err := leagueSvc.InitKafka(ctx); err != nil {
+		log.Printf("Kafka init warning (league sync): %v", err)
 	}
 
 	// ── API ──────────────────────────────────────────────────────────────────
-	router := api.NewRouter(svc, usageSvc, fightingSvc, rankingSvc, hub)
+	router := api.NewRouter(svc, usageSvc, fightingSvc, rankingSvc, leagueSvc, hub)
 
 	// Swagger UI at /docs/
 	http.Handle("/docs/", httpswagger.WrapHandler)

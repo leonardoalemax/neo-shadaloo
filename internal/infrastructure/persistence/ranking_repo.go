@@ -127,6 +127,18 @@ func (r *RankingRepository) ReplaceAll(ctx context.Context, rt domain.RankingTyp
 	return r.AppendBatch(ctx, entries)
 }
 
+// CountSyncedPages deriva a contagem de páginas processadas do próprio banco.
+// Cada página tem 10 entries com order_no sequencial; (order_no-1)/10 dá o índice da página.
+func (r *RankingRepository) CountSyncedPages(ctx context.Context, rt domain.RankingType) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT (order_no - 1) / 10)
+		FROM ranking_entry
+		WHERE ranking_type = $1
+	`, string(rt)).Scan(&n)
+	return n, err
+}
+
 // SaveMeta grava o meta. last_synced_at só é atualizado se vier > 0 no input
 // (assim os updates de progresso não sobrescrevem com 0).
 func (r *RankingRepository) SaveMeta(ctx context.Context, meta domain.SnapshotMeta) error {

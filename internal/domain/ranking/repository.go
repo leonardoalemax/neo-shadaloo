@@ -83,4 +83,9 @@ type Repository interface {
 	// PlayersByCountry conta jogadores únicos (DISTINCT short_id) por país,
 	// enriquecido com nome e ISO code via JOIN com home_country.
 	PlayersByCountry(ctx context.Context, rt RankingType) ([]CountryPlayerCount, error)
+
+	// CountSyncedPages devolve quantas páginas únicas (10 entries por página)
+	// já foram persistidas. Usado pra atualizar meta sem depender de counter
+	// em memória (que zera a cada deploy).
+	CountSyncedPages(ctx context.Context, rt RankingType) (int, error)
 }

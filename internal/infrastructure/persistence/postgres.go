@@ -117,6 +117,39 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			name    TEXT NOT NULL,
 			iso3    TEXT NOT NULL
 		)`,
+		// league_player: tabela dedicada do ranking de league.
+		// PK = short_id; players são upserted, nunca deletados.
+		`CREATE TABLE IF NOT EXISTS league_player (
+			short_id            BIGINT PRIMARY KEY,
+			fighter_id          TEXT   NOT NULL,
+			character_id        INT    NOT NULL DEFAULT 0,
+			character_tool_name TEXT   NOT NULL DEFAULT '',
+			character_name      TEXT   NOT NULL DEFAULT '',
+			league_point        INT    NOT NULL DEFAULT 0,
+			league_rank         INT    NOT NULL DEFAULT 0,
+			master_league       INT    NOT NULL DEFAULT 0,
+			master_rating       INT    NOT NULL DEFAULT 0,
+			home_id             INT    NOT NULL DEFAULT 0,
+			platform_id         INT    NOT NULL DEFAULT 0,
+			order_no            INT    NOT NULL DEFAULT 0,
+			full_data           JSONB,
+			updated_at          BIGINT NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS league_player_home  ON league_player (home_id) WHERE home_id > 0`,
+		`CREATE INDEX IF NOT EXISTS league_player_order ON league_player (order_no)`,
+		// league_meta: singleton (id=1) com estado do sync.
+		`CREATE TABLE IF NOT EXISTS league_meta (
+			id               INT    PRIMARY KEY DEFAULT 1,
+			total_count      INT    NOT NULL DEFAULT 0,
+			total_pages      INT    NOT NULL DEFAULT 0,
+			synced_pages     INT    NOT NULL DEFAULT 0,
+			updated_at       BIGINT NOT NULL DEFAULT 0,
+			started_at       BIGINT NOT NULL DEFAULT 0,
+			last_synced_at   BIGINT NOT NULL DEFAULT 0,
+			status           TEXT   NOT NULL DEFAULT '',
+			CONSTRAINT league_meta_singleton CHECK (id = 1)
+		)`,
+		`INSERT INTO league_meta (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
 	}
 
 	for _, s := range steps {
