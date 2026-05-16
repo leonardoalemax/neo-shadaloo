@@ -164,8 +164,24 @@ func (c *Client) FetchFighting(ctx context.Context, yyyymm string) ([]domain.Lea
 		log.Printf("[sf6-fighting] %s: endpoint master falhou: %v", yyyymm, master.err)
 	}
 
-	merged := append(regular.leagues, master.leagues...)
-	log.Printf("[sf6-fighting] %s: %d leagues (regular=%d, master=%d)",
-		yyyymm, len(merged), len(regular.leagues), len(master.leagues))
+	// Merge: master sobrescreve regular em caso de colisão por LeagueRank.
+	masterRanks := make(map[int]bool, len(master.leagues))
+	for _, l := range master.leagues {
+		masterRanks[l.LeagueRank] = true
+	}
+
+	merged := make([]domain.LeagueFighting, 0, len(regular.leagues)+len(master.leagues))
+	dropped := 0
+	for _, l := range regular.leagues {
+		if masterRanks[l.LeagueRank] {
+			dropped++
+			continue
+		}
+		merged = append(merged, l)
+	}
+	merged = append(merged, master.leagues...)
+
+	log.Printf("[sf6-fighting] %s: %d leagues (regular=%d, master=%d, sobrescritos=%d)",
+		yyyymm, len(merged), len(regular.leagues), len(master.leagues), dropped)
 	return merged, nil
 }

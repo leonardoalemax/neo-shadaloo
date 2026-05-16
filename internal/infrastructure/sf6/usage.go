@@ -135,8 +135,30 @@ func (c *Client) FetchUsage(ctx context.Context, yyyymm string) ([]domain.League
 		log.Printf("[sf6-usage] %s: endpoint master falhou: %v", yyyymm, master.err)
 	}
 
-	merged := append(regular.leagues, master.leagues...)
-	log.Printf("[sf6-usage] %s: %d leagues (regular=%d, master=%d)",
-		yyyymm, len(merged), len(regular.leagues), len(master.leagues))
+	// Merge: master sobrescreve regular em caso de colisão por
+	// (operation_type, league_alpha). Assim, se regular já tem MASTER,
+	// a versão do endpoint master prevalece.
+	type key struct {
+		op    int
+		alpha string
+	}
+	masterKeys := make(map[key]bool, len(master.leagues))
+	for _, l := range master.leagues {
+		masterKeys[key{l.OperationType, l.LeagueAlpha}] = true
+	}
+
+	merged := make([]domain.LeagueUsage, 0, len(regular.leagues)+len(master.leagues))
+	dropped := 0
+	for _, l := range regular.leagues {
+		if masterKeys[key{l.OperationType, l.LeagueAlpha}] {
+			dropped++
+			continue
+		}
+		merged = append(merged, l)
+	}
+	merged = append(merged, master.leagues...)
+
+	log.Printf("[sf6-usage] %s: %d leagues (regular=%d, master=%d, sobrescritos=%d)",
+		yyyymm, len(merged), len(regular.leagues), len(master.leagues), dropped)
 	return merged, nil
 }
