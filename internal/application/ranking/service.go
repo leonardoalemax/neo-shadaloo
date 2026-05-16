@@ -120,11 +120,14 @@ func (s *Service) runSync(ctx context.Context, rt domain.RankingType) error {
 			defer wgFetch.Done()
 			for page := range pageCh {
 				time.Sleep(requestPause)
+				reqStart := time.Now()
 				pg, err := s.sf6.FetchRankingPage(ctx, rt, page)
 				if err != nil {
 					log.Printf("[ranking] %s: pg=%d worker=%d erro: %v", rt, page, workerID, err)
 					continue
 				}
+				log.Printf("[ranking] %s: pg=%d/%d worker=%d entries=%d took=%s",
+					rt, page, totalPages, workerID, len(pg.Entries), time.Since(reqStart).Round(time.Millisecond))
 				entriesCh <- pg.Entries
 			}
 		}(i)
