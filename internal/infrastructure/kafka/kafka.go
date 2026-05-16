@@ -30,6 +30,7 @@ func BrokerAddr() string {
 	if addr == "" {
 		addr = "localhost:9092"
 	}
+	log.Printf("[kafka] broker addr: %s", addr)
 	return addr
 }
 

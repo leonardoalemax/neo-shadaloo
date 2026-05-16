@@ -11,4 +11,5 @@ services:
         environment:
             DATABASE_URL: ${DATABASE_URL}
             SF6_COOKIE: ${SF6_COOKIE}
+            KAFKA_BROKER: ${KAFKA_BROKER}
             PORT: "8080"
