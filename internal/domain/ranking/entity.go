@@ -34,7 +34,7 @@ type Entry struct {
 	MasterRatingOrder  int             `json:"master_rating_ranking"`
 	HomeID             int             `json:"home_id"`
 	PlatformID         int             `json:"platform_id"`
-	FullData           json.RawMessage `json:"full_data"` // JSON completo do entry (para campos não-extraídos)
+	FullData           json.RawMessage `json:"full_data" swaggertype:"object"` // JSON completo do entry (para campos não-extraídos)
 }
 
 // SnapshotMeta é o metadado de uma sincronização (snapshot atual).

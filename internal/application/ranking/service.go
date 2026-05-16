@@ -194,6 +194,26 @@ func (s *Service) GetMeta(ctx context.Context, rt domain.RankingType) (*domain.S
 	return s.repo.GetMeta(ctx, rt)
 }
 
+// List delega pra repo (paginação + filtros).
+func (s *Service) List(ctx context.Context, rt domain.RankingType, f domain.ListFilter) (*domain.ListPage, error) {
+	return s.repo.List(ctx, rt, f)
+}
+
+// ByPlayer devolve entries de um jogador específico no ranking.
+func (s *Service) ByPlayer(ctx context.Context, rt domain.RankingType, shortID int64) ([]domain.Entry, error) {
+	return s.repo.ByPlayer(ctx, rt, shortID)
+}
+
+// Around devolve vizinhança em torno de uma posição.
+func (s *Service) Around(ctx context.Context, rt domain.RankingType, order, radius int) ([]domain.Entry, error) {
+	return s.repo.Around(ctx, rt, order, radius)
+}
+
+// Facets devolve contadores pra preencher filtros.
+func (s *Service) Facets(ctx context.Context, rt domain.RankingType) (*domain.Facets, error) {
+	return s.repo.FacetsOf(ctx, rt)
+}
+
 // indexPlayers extrai os players únicos do batch (dedup por short_id) e
 // faz upsert no player_index. Roda em goroutine pra não bloquear o crawl.
 // Erros são apenas logados — falha no índice não pode interromper o sync.

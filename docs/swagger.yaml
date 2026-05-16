@@ -254,6 +254,84 @@ definitions:
       wins:
         type: integer
     type: object
+  ranking.CharacterCount:
+    properties:
+      character_name:
+        type: string
+      character_tool_name:
+        type: string
+      count:
+        type: integer
+    type: object
+  ranking.Entry:
+    properties:
+      character_id:
+        description: personagem usado nessa entrada
+        type: integer
+      character_name:
+        type: string
+      character_tool_name:
+        type: string
+      fighter_id:
+        type: string
+      full_data:
+        description: JSON completo do entry (para campos não-extraídos)
+        type: object
+      home_id:
+        type: integer
+      league_point:
+        type: integer
+      league_rank:
+        type: integer
+      master_league:
+        type: integer
+      master_rating:
+        type: integer
+      master_rating_ranking:
+        type: integer
+      order:
+        description: posição global no ranking (1, 2, 3, ...)
+        type: integer
+      platform_id:
+        type: integer
+      ranking_type:
+        $ref: '#/definitions/ranking.RankingType'
+      short_id:
+        type: integer
+    type: object
+  ranking.Facets:
+    properties:
+      characters:
+        items:
+          $ref: '#/definitions/ranking.CharacterCount'
+        type: array
+      homes:
+        items:
+          $ref: '#/definitions/ranking.HomeCount'
+        type: array
+    type: object
+  ranking.HomeCount:
+    properties:
+      count:
+        type: integer
+      home_id:
+        type: integer
+    type: object
+  ranking.ListPage:
+    properties:
+      current_page:
+        type: integer
+      entries:
+        items:
+          $ref: '#/definitions/ranking.Entry'
+        type: array
+      limit:
+        type: integer
+      total_count:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
   ranking.RankingType:
     enum:
     - league_point
@@ -681,6 +759,123 @@ paths:
       summary: Health check
       tags:
       - system
+  /v1/ranking/{type}:
+    get:
+      parameters:
+      - description: Tipo de ranking
+        enum:
+        - league_point
+        - arcade_score
+        - kudos
+        - master_rating
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Página (1-based)
+        in: query
+        name: page
+        type: integer
+      - description: Items por página (max 200, default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: 'Filtrar por character_tool_name (ex: zangief)'
+        in: query
+        name: character
+        type: string
+      - description: Filtrar por região (home_id)
+        in: query
+        name: home_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ranking.ListPage'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Lista paginada do ranking
+      tags:
+      - ranking
+  /v1/ranking/{type}/around/{order}:
+    get:
+      parameters:
+      - description: Tipo de ranking
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Posição central (order_no)
+        in: path
+        name: order
+        required: true
+        type: integer
+      - description: Raio (default 5, max 100)
+        in: query
+        name: radius
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/ranking.Entry'
+            type: array
+      summary: Vizinhança de uma posição no ranking
+      tags:
+      - ranking
+  /v1/ranking/{type}/facets:
+    get:
+      parameters:
+      - description: Tipo de ranking
+        in: path
+        name: type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ranking.Facets'
+      summary: Facets do ranking (personagens + regiões)
+      tags:
+      - ranking
+  /v1/ranking/{type}/player/{short_id}:
+    get:
+      parameters:
+      - description: Tipo de ranking
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: Short ID do jogador
+        in: path
+        name: short_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/ranking.Entry'
+            type: array
+      summary: Posição de um jogador no ranking
+      tags:
+      - ranking
   /v1/ranking/{type}/status:
     get:
       parameters:

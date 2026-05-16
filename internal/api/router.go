@@ -50,6 +50,11 @@ func NewRouter(svc *app.BattlelogService, usageSvc *appusage.UsageService, fight
 	r.Post("/v1/ranking/sync", handlers.PostRankingSyncAll(rankingSvc))
 	r.Post("/v1/ranking/{type}/sync", handlers.PostRankingSync(rankingSvc))
 	r.Get("/v1/ranking/{type}/status", handlers.GetRankingStatus(rankingSvc))
+	// Visualização
+	r.Get("/v1/ranking/{type}", handlers.GetRanking(rankingSvc))
+	r.Get("/v1/ranking/{type}/facets", handlers.GetRankingFacets(rankingSvc))
+	r.Get("/v1/ranking/{type}/player/{short_id}", handlers.GetRankingByPlayer(rankingSvc))
+	r.Get("/v1/ranking/{type}/around/{order}", handlers.GetRankingAround(rankingSvc))
 
 	return r
 }

@@ -148,6 +148,216 @@ func (r *RankingRepository) SaveMeta(ctx context.Context, meta domain.SnapshotMe
 	return err
 }
 
+// ── Queries de visualização ──────────────────────────────────────────────────
+
+const maxLimit = 200
+const defaultLimit = 50
+
+// List devolve uma página de entries com filtros opcionais.
+func (r *RankingRepository) List(ctx context.Context, rt domain.RankingType, f domain.ListFilter) (*domain.ListPage, error) {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+	if limit > maxLimit {
+		limit = maxLimit
+	}
+	page := f.Page
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
+
+	// Constrói WHERE dinamicamente
+	where := "ranking_type = $1"
+	args := []any{string(rt)}
+	idx := 2
+	if f.CharacterToolName != "" {
+		where += fmt.Sprintf(" AND character_tool_name = $%d", idx)
+		args = append(args, f.CharacterToolName)
+		idx++
+	}
+	if f.HomeID != 0 {
+		where += fmt.Sprintf(" AND home_id = $%d", idx)
+		args = append(args, f.HomeID)
+		idx++
+	}
+
+	// Count total (filtrado). Sem filtro, usa o ranking_meta (mais barato).
+	var totalCount int
+	if f.CharacterToolName == "" && f.HomeID == 0 {
+		err := r.pool.QueryRow(ctx,
+			`SELECT total_count FROM ranking_meta WHERE ranking_type = $1`,
+			string(rt)).Scan(&totalCount)
+		if errors.Is(err, pgx.ErrNoRows) {
+			totalCount = 0
+		} else if err != nil {
+			return nil, err
+		}
+	} else {
+		err := r.pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM ranking_entry WHERE `+where,
+			args...,
+		).Scan(&totalCount)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Busca a página
+	args = append(args, limit, offset)
+	query := `
+		SELECT ranking_type, order_no, short_id, fighter_id,
+			character_id, character_tool_name, character_name,
+			league_point, league_rank, master_league, master_rating,
+			master_rating_order, home_id, platform_id, full_data
+		FROM ranking_entry
+		WHERE ` + where + `
+		ORDER BY order_no ASC
+		LIMIT $` + fmt.Sprintf("%d", idx) + ` OFFSET $` + fmt.Sprintf("%d", idx+1)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	entries, err := scanEntries(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	totalPages := (totalCount + limit - 1) / limit
+	return &domain.ListPage{
+		Entries:     entries,
+		CurrentPage: page,
+		TotalPages:  totalPages,
+		TotalCount:  totalCount,
+		Limit:       limit,
+	}, nil
+}
+
+// ByPlayer devolve todas as entries de um jogador em um ranking.
+func (r *RankingRepository) ByPlayer(ctx context.Context, rt domain.RankingType, shortID int64) ([]domain.Entry, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT ranking_type, order_no, short_id, fighter_id,
+			character_id, character_tool_name, character_name,
+			league_point, league_rank, master_league, master_rating,
+			master_rating_order, home_id, platform_id, full_data
+		FROM ranking_entry
+		WHERE ranking_type = $1 AND short_id = $2
+		ORDER BY order_no ASC
+	`, string(rt), shortID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanEntries(rows)
+}
+
+// Around devolve entries em volta de uma posição (±radius).
+func (r *RankingRepository) Around(ctx context.Context, rt domain.RankingType, order int, radius int) ([]domain.Entry, error) {
+	if radius <= 0 {
+		radius = 5
+	}
+	if radius > 100 {
+		radius = 100
+	}
+	from := order - radius
+	if from < 1 {
+		from = 1
+	}
+	to := order + radius
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT ranking_type, order_no, short_id, fighter_id,
+			character_id, character_tool_name, character_name,
+			league_point, league_rank, master_league, master_rating,
+			master_rating_order, home_id, platform_id, full_data
+		FROM ranking_entry
+		WHERE ranking_type = $1 AND order_no BETWEEN $2 AND $3
+		ORDER BY order_no ASC
+	`, string(rt), from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanEntries(rows)
+}
+
+// FacetsOf devolve contadores por personagem e por região.
+// Pra performance em tabelas grandes, limita o top 50 por categoria.
+func (r *RankingRepository) FacetsOf(ctx context.Context, rt domain.RankingType) (*domain.Facets, error) {
+	out := &domain.Facets{Characters: []domain.CharacterCount{}, Homes: []domain.HomeCount{}}
+
+	// Characters
+	rows, err := r.pool.Query(ctx, `
+		SELECT character_tool_name, character_name, COUNT(*) as c
+		FROM ranking_entry
+		WHERE ranking_type = $1 AND character_tool_name <> ''
+		GROUP BY character_tool_name, character_name
+		ORDER BY c DESC
+		LIMIT 50
+	`, string(rt))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var cc domain.CharacterCount
+		if err := rows.Scan(&cc.CharacterToolName, &cc.CharacterName, &cc.Count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out.Characters = append(out.Characters, cc)
+	}
+	rows.Close()
+
+	// Homes
+	rows, err = r.pool.Query(ctx, `
+		SELECT home_id, COUNT(*) as c
+		FROM ranking_entry
+		WHERE ranking_type = $1 AND home_id > 0
+		GROUP BY home_id
+		ORDER BY c DESC
+		LIMIT 50
+	`, string(rt))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hc domain.HomeCount
+		if err := rows.Scan(&hc.HomeID, &hc.Count); err != nil {
+			return nil, err
+		}
+		out.Homes = append(out.Homes, hc)
+	}
+
+	return out, nil
+}
+
+// scanEntries é helper compartilhado pelos métodos de query.
+func scanEntries(rows pgx.Rows) ([]domain.Entry, error) {
+	var entries []domain.Entry
+	for rows.Next() {
+		var e domain.Entry
+		var rtStr string
+		var fullData []byte
+		if err := rows.Scan(
+			&rtStr, &e.OrderNo, &e.ShortID, &e.FighterID,
+			&e.CharacterID, &e.CharacterToolName, &e.CharacterName,
+			&e.LeaguePoint, &e.LeagueRank, &e.MasterLeague, &e.MasterRating,
+			&e.MasterRatingOrder, &e.HomeID, &e.PlatformID, &fullData,
+		); err != nil {
+			return nil, err
+		}
+		e.RankingType = domain.RankingType(rtStr)
+		e.FullData = fullData
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
 func (r *RankingRepository) GetMeta(ctx context.Context, rt domain.RankingType) (*domain.SnapshotMeta, error) {
 	var m domain.SnapshotMeta
 	var rtStr string

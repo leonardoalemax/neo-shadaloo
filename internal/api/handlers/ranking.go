@@ -3,12 +3,17 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
 	app "neo-shadaloo/internal/application/ranking"
 	dranking "neo-shadaloo/internal/domain/ranking"
 )
+
+// referência usada por swag pra gerar o schema
+var _ = dranking.ListPage{}
+var _ = dranking.Facets{}
 
 // PostRankingSyncAll dispara o sync de TODOS os 4 rankings em background.
 //
@@ -96,6 +101,142 @@ func GetRankingStatus(svc *app.Service) http.HandlerFunc {
 			"running":         svc.IsRunning(rt),
 		})
 	}
+}
+
+// GetRanking lista uma página do ranking com filtros opcionais.
+//
+//	@Summary		Lista paginada do ranking
+//	@Param			type		path	string	true	"Tipo de ranking"	Enums(league_point, arcade_score, kudos, master_rating)
+//	@Param			page		query	int		false	"Página (1-based)"
+//	@Param			limit		query	int		false	"Items por página (max 200, default 50)"
+//	@Param			character	query	string	false	"Filtrar por character_tool_name (ex: zangief)"
+//	@Param			home_id		query	int		false	"Filtrar por região (home_id)"
+//	@Tags			ranking
+//	@Produce		json
+//	@Success		200	{object}	dranking.ListPage
+//	@Failure		400	{object}	map[string]string
+//	@Router			/v1/ranking/{type} [get]
+func GetRanking(svc *app.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rt := dranking.RankingType(chi.URLParam(r, "type"))
+		if !isValidRankingType(rt) {
+			http.Error(w, `{"error":"ranking_type inválido"}`, http.StatusBadRequest)
+			return
+		}
+		q := r.URL.Query()
+		page, _ := strconv.Atoi(q.Get("page"))
+		limit, _ := strconv.Atoi(q.Get("limit"))
+		homeID, _ := strconv.Atoi(q.Get("home_id"))
+
+		out, err := svc.List(r.Context(), rt, dranking.ListFilter{
+			Page:              page,
+			Limit:             limit,
+			CharacterToolName: q.Get("character"),
+			HomeID:            homeID,
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, out)
+	}
+}
+
+// GetRankingByPlayer busca todas as entries de um jogador no ranking.
+//
+//	@Summary		Posição de um jogador no ranking
+//	@Param			type		path	string	true	"Tipo de ranking"
+//	@Param			short_id	path	int		true	"Short ID do jogador"
+//	@Tags			ranking
+//	@Produce		json
+//	@Success		200	{array}	dranking.Entry
+//	@Router			/v1/ranking/{type}/player/{short_id} [get]
+func GetRankingByPlayer(svc *app.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rt := dranking.RankingType(chi.URLParam(r, "type"))
+		if !isValidRankingType(rt) {
+			http.Error(w, `{"error":"ranking_type inválido"}`, http.StatusBadRequest)
+			return
+		}
+		shortID, err := strconv.ParseInt(chi.URLParam(r, "short_id"), 10, 64)
+		if err != nil {
+			http.Error(w, `{"error":"short_id inválido"}`, http.StatusBadRequest)
+			return
+		}
+		entries, err := svc.ByPlayer(r.Context(), rt, shortID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if entries == nil {
+			entries = []dranking.Entry{}
+		}
+		writeJSON(w, entries)
+	}
+}
+
+// GetRankingAround devolve entries em volta de uma posição (±radius).
+//
+//	@Summary		Vizinhança de uma posição no ranking
+//	@Param			type	path	string	true	"Tipo de ranking"
+//	@Param			order	path	int		true	"Posição central (order_no)"
+//	@Param			radius	query	int		false	"Raio (default 5, max 100)"
+//	@Tags			ranking
+//	@Produce		json
+//	@Success		200	{array}	dranking.Entry
+//	@Router			/v1/ranking/{type}/around/{order} [get]
+func GetRankingAround(svc *app.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rt := dranking.RankingType(chi.URLParam(r, "type"))
+		if !isValidRankingType(rt) {
+			http.Error(w, `{"error":"ranking_type inválido"}`, http.StatusBadRequest)
+			return
+		}
+		order, err := strconv.Atoi(chi.URLParam(r, "order"))
+		if err != nil || order < 1 {
+			http.Error(w, `{"error":"order inválido"}`, http.StatusBadRequest)
+			return
+		}
+		radius, _ := strconv.Atoi(r.URL.Query().Get("radius"))
+		entries, err := svc.Around(r.Context(), rt, order, radius)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if entries == nil {
+			entries = []dranking.Entry{}
+		}
+		writeJSON(w, entries)
+	}
+}
+
+// GetRankingFacets devolve contadores por personagem e região (pra filtros do front).
+//
+//	@Summary		Facets do ranking (personagens + regiões)
+//	@Param			type	path	string	true	"Tipo de ranking"
+//	@Tags			ranking
+//	@Produce		json
+//	@Success		200	{object}	dranking.Facets
+//	@Router			/v1/ranking/{type}/facets [get]
+func GetRankingFacets(svc *app.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rt := dranking.RankingType(chi.URLParam(r, "type"))
+		if !isValidRankingType(rt) {
+			http.Error(w, `{"error":"ranking_type inválido"}`, http.StatusBadRequest)
+			return
+		}
+		facets, err := svc.Facets(r.Context(), rt)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, facets)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func isValidRankingType(rt dranking.RankingType) bool {

@@ -520,6 +520,183 @@
                 }
             }
         },
+        "/v1/ranking/{type}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ranking"
+                ],
+                "summary": "Lista paginada do ranking",
+                "parameters": [
+                    {
+                        "enum": [
+                            "league_point",
+                            "arcade_score",
+                            "kudos",
+                            "master_rating"
+                        ],
+                        "type": "string",
+                        "description": "Tipo de ranking",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Página (1-based)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items por página (max 200, default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filtrar por character_tool_name (ex: zangief)",
+                        "name": "character",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filtrar por região (home_id)",
+                        "name": "home_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ranking.ListPage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/ranking/{type}/around/{order}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ranking"
+                ],
+                "summary": "Vizinhança de uma posição no ranking",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tipo de ranking",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Posição central (order_no)",
+                        "name": "order",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Raio (default 5, max 100)",
+                        "name": "radius",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/ranking.Entry"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/ranking/{type}/facets": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ranking"
+                ],
+                "summary": "Facets do ranking (personagens + regiões)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tipo de ranking",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ranking.Facets"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/ranking/{type}/player/{short_id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ranking"
+                ],
+                "summary": "Posição de um jogador no ranking",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tipo de ranking",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Short ID do jogador",
+                        "name": "short_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/ranking.Entry"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/ranking/{type}/status": {
             "get": {
                 "produces": [
@@ -1091,6 +1268,124 @@
                     "type": "integer"
                 },
                 "wins": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ranking.CharacterCount": {
+            "type": "object",
+            "properties": {
+                "character_name": {
+                    "type": "string"
+                },
+                "character_tool_name": {
+                    "type": "string"
+                },
+                "count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ranking.Entry": {
+            "type": "object",
+            "properties": {
+                "character_id": {
+                    "description": "personagem usado nessa entrada",
+                    "type": "integer"
+                },
+                "character_name": {
+                    "type": "string"
+                },
+                "character_tool_name": {
+                    "type": "string"
+                },
+                "fighter_id": {
+                    "type": "string"
+                },
+                "full_data": {
+                    "description": "JSON completo do entry (para campos não-extraídos)",
+                    "type": "object"
+                },
+                "home_id": {
+                    "type": "integer"
+                },
+                "league_point": {
+                    "type": "integer"
+                },
+                "league_rank": {
+                    "type": "integer"
+                },
+                "master_league": {
+                    "type": "integer"
+                },
+                "master_rating": {
+                    "type": "integer"
+                },
+                "master_rating_ranking": {
+                    "type": "integer"
+                },
+                "order": {
+                    "description": "posição global no ranking (1, 2, 3, ...)",
+                    "type": "integer"
+                },
+                "platform_id": {
+                    "type": "integer"
+                },
+                "ranking_type": {
+                    "$ref": "#/definitions/ranking.RankingType"
+                },
+                "short_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ranking.Facets": {
+            "type": "object",
+            "properties": {
+                "characters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ranking.CharacterCount"
+                    }
+                },
+                "homes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ranking.HomeCount"
+                    }
+                }
+            }
+        },
+        "ranking.HomeCount": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "home_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ranking.ListPage": {
+            "type": "object",
+            "properties": {
+                "current_page": {
+                    "type": "integer"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ranking.Entry"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "total_count": {
+                    "type": "integer"
+                },
+                "total_pages": {
                     "type": "integer"
                 }
             }
