@@ -214,6 +214,11 @@ func (s *Service) Facets(ctx context.Context, rt domain.RankingType) (*domain.Fa
 	return s.repo.FacetsOf(ctx, rt)
 }
 
+// PlayersByCountry devolve players únicos por país pra renderizar o mapa.
+func (s *Service) PlayersByCountry(ctx context.Context, rt domain.RankingType) ([]domain.CountryPlayerCount, error) {
+	return s.repo.PlayersByCountry(ctx, rt)
+}
+
 // indexPlayers extrai os players únicos do batch (dedup por short_id) e
 // faz upsert no player_index. Roda em goroutine pra não bloquear o crawl.
 // Erros são apenas logados — falha no índice não pode interromper o sync.

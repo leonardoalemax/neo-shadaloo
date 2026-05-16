@@ -263,6 +263,17 @@ definitions:
       count:
         type: integer
     type: object
+  ranking.CountryPlayerCount:
+    properties:
+      country_name:
+        type: string
+      home_id:
+        type: integer
+      iso3:
+        type: string
+      player_count:
+        type: integer
+    type: object
   ranking.Entry:
     properties:
       character_id:
@@ -874,6 +885,26 @@ paths:
               $ref: '#/definitions/ranking.Entry'
             type: array
       summary: Posição de um jogador no ranking
+      tags:
+      - ranking
+  /v1/ranking/{type}/players-by-country:
+    get:
+      parameters:
+      - description: Tipo de ranking
+        in: path
+        name: type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/ranking.CountryPlayerCount'
+            type: array
+      summary: Players únicos por país (pro mapa mundi)
       tags:
       - ranking
   /v1/ranking/{type}/status:

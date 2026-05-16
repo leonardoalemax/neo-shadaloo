@@ -234,6 +234,30 @@ func GetRankingFacets(svc *app.Service) http.HandlerFunc {
 	}
 }
 
+// GetRankingPlayersByCountry retorna contagem de players únicos por país.
+//
+//	@Summary		Players únicos por país (pro mapa mundi)
+//	@Param			type	path	string	true	"Tipo de ranking"
+//	@Tags			ranking
+//	@Produce		json
+//	@Success		200	{array}	dranking.CountryPlayerCount
+//	@Router			/v1/ranking/{type}/players-by-country [get]
+func GetRankingPlayersByCountry(svc *app.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		rt := dranking.RankingType(chi.URLParam(r, "type"))
+		if !isValidRankingType(rt) {
+			http.Error(w, `{"error":"ranking_type inválido"}`, http.StatusBadRequest)
+			return
+		}
+		out, err := svc.PlayersByCountry(r.Context(), rt)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, out)
+	}
+}
+
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)

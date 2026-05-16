@@ -336,6 +336,41 @@ func (r *RankingRepository) FacetsOf(ctx context.Context, rt domain.RankingType)
 	return out, nil
 }
 
+// PlayersByCountry conta jogadores únicos por país (DISTINCT short_id GROUP BY home_id)
+// e enriquece com nome e ISO code via JOIN com home_country.
+// Inclui apenas países que têm pelo menos 1 jogador.
+func (r *RankingRepository) PlayersByCountry(ctx context.Context, rt domain.RankingType) ([]domain.CountryPlayerCount, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT re.home_id, hc.name, hc.iso3, COUNT(DISTINCT re.short_id) AS player_count
+		FROM ranking_entry re
+		LEFT JOIN home_country hc ON hc.home_id = re.home_id
+		WHERE re.ranking_type = $1 AND re.home_id > 0
+		GROUP BY re.home_id, hc.name, hc.iso3
+		ORDER BY player_count DESC
+	`, string(rt))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []domain.CountryPlayerCount{}
+	for rows.Next() {
+		var c domain.CountryPlayerCount
+		var name, iso3 *string // LEFT JOIN — podem vir NULL
+		if err := rows.Scan(&c.HomeID, &name, &iso3, &c.PlayerCount); err != nil {
+			return nil, err
+		}
+		if name != nil {
+			c.CountryName = *name
+		}
+		if iso3 != nil {
+			c.ISO3 = *iso3
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 // scanEntries é helper compartilhado pelos métodos de query.
 func scanEntries(rows pgx.Rows) ([]domain.Entry, error) {
 	var entries []domain.Entry

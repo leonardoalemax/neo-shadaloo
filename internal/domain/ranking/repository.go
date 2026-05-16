@@ -24,6 +24,15 @@ type HomeCount struct {
 	Count  int `json:"count"`
 }
 
+// CountryPlayerCount é a contagem de jogadores únicos por país,
+// enriquecida com nome e ISO code pra renderização no mapa.
+type CountryPlayerCount struct {
+	HomeID      int    `json:"home_id"`
+	CountryName string `json:"country_name"`
+	ISO3        string `json:"iso3"`
+	PlayerCount int    `json:"player_count"`
+}
+
 // Facets agrupa os contadores pra preencher filtros no front.
 type Facets struct {
 	Characters []CharacterCount `json:"characters"`
@@ -70,4 +79,8 @@ type Repository interface {
 
 	// FacetsOf devolve contadores por personagem e por região pra preencher filtros.
 	FacetsOf(ctx context.Context, rt RankingType) (*Facets, error)
+
+	// PlayersByCountry conta jogadores únicos (DISTINCT short_id) por país,
+	// enriquecido com nome e ISO code via JOIN com home_country.
+	PlayersByCountry(ctx context.Context, rt RankingType) ([]CountryPlayerCount, error)
 }

@@ -55,6 +55,7 @@ func NewRouter(svc *app.BattlelogService, usageSvc *appusage.UsageService, fight
 	r.Get("/v1/ranking/{type}/facets", handlers.GetRankingFacets(rankingSvc))
 	r.Get("/v1/ranking/{type}/player/{short_id}", handlers.GetRankingByPlayer(rankingSvc))
 	r.Get("/v1/ranking/{type}/around/{order}", handlers.GetRankingAround(rankingSvc))
+	r.Get("/v1/ranking/{type}/players-by-country", handlers.GetRankingPlayersByCountry(rankingSvc))
 
 	return r
 }

@@ -699,6 +699,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/ranking/{type}/players-by-country": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ranking"
+                ],
+                "summary": "Players únicos por país (pro mapa mundi)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tipo de ranking",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/ranking.CountryPlayerCount"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/v1/ranking/{type}/status": {
             "get": {
                 "produces": [
@@ -1284,6 +1315,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "ranking.CountryPlayerCount": {
+            "type": "object",
+            "properties": {
+                "country_name": {
+                    "type": "string"
+                },
+                "home_id": {
+                    "type": "integer"
+                },
+                "iso3": {
+                    "type": "string"
+                },
+                "player_count": {
                     "type": "integer"
                 }
             }

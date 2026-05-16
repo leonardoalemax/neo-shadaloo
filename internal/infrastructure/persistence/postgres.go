@@ -26,7 +26,32 @@ func Connect(ctx context.Context) error {
 	}
 
 	Pool = pool
-	return migrate(ctx, pool)
+	if err := migrate(ctx, pool); err != nil {
+		return err
+	}
+	return seedCountries(ctx, pool)
+}
+
+// seedCountries popula a tabela home_country com o mapping SF6 → ISO 3166-1.
+// É idempotente (ON CONFLICT DO NOTHING).
+func seedCountries(ctx context.Context, pool *pgxpool.Pool) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	for _, c := range SF6Countries {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO home_country (home_id, name, iso3)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (home_id) DO UPDATE SET
+				name = EXCLUDED.name,
+				iso3 = EXCLUDED.iso3
+		`, c.HomeID, c.Name, c.ISO3); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func migrate(ctx context.Context, pool *pgxpool.Pool) error {
@@ -86,6 +111,12 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		// idempotent: adiciona as novas colunas se a tabela já existir sem elas
 		`ALTER TABLE ranking_meta ADD COLUMN IF NOT EXISTS started_at     BIGINT NOT NULL DEFAULT 0`,
 		`ALTER TABLE ranking_meta ADD COLUMN IF NOT EXISTS last_synced_at BIGINT NOT NULL DEFAULT 0`,
+		// Mapping home_id (SF6) → país + ISO 3166-1 alpha-3
+		`CREATE TABLE IF NOT EXISTS home_country (
+			home_id INT PRIMARY KEY,
+			name    TEXT NOT NULL,
+			iso3    TEXT NOT NULL
+		)`,
 	}
 
 	for _, s := range steps {
