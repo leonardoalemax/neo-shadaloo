@@ -8,12 +8,13 @@ import (
 
 	app "neo-shadaloo/internal/application/battlelog"
 	appfighting "neo-shadaloo/internal/application/fighting"
+	appranking "neo-shadaloo/internal/application/ranking"
 	appusage "neo-shadaloo/internal/application/usage"
 	"neo-shadaloo/internal/api/handlers"
 	"neo-shadaloo/internal/infrastructure/realtime"
 )
 
-func NewRouter(svc *app.BattlelogService, usageSvc *appusage.UsageService, fightingSvc *appfighting.FightingService, hub *realtime.Hub) http.Handler {
+func NewRouter(svc *app.BattlelogService, usageSvc *appusage.UsageService, fightingSvc *appfighting.FightingService, rankingSvc *appranking.Service, hub *realtime.Hub) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -44,6 +45,11 @@ func NewRouter(svc *app.BattlelogService, usageSvc *appusage.UsageService, fight
 	r.Get("/v1/fighting/months", handlers.GetFightingMonths(fightingSvc))
 	r.Get("/v1/fighting/{yyyymm}", handlers.GetFighting(fightingSvc))
 	r.Post("/v1/fighting/{yyyymm}/sync", handlers.PostFightingSync(fightingSvc))
+
+	// Ranking global (snapshot atual). 4 tipos: league_point, arcade_score, kudos, master_rating
+	r.Post("/v1/ranking/sync", handlers.PostRankingSyncAll(rankingSvc))
+	r.Post("/v1/ranking/{type}/sync", handlers.PostRankingSync(rankingSvc))
+	r.Get("/v1/ranking/{type}/status", handlers.GetRankingStatus(rankingSvc))
 
 	return r
 }
