@@ -52,8 +52,9 @@ type sf6DiaResponse struct {
 	} `json:"diaData"`
 }
 
-func (c *Client) FetchFighting(ctx context.Context, yyyymm string) ([]domain.LeagueFighting, error) {
-	url := fmt.Sprintf("%s/api/en/stats/dia/%s", sf6Base, yyyymm)
+// fetchFightingEndpoint busca um endpoint específico (dia ou dia_master).
+func (c *Client) fetchFightingEndpoint(ctx context.Context, endpoint, yyyymm string) ([]domain.LeagueFighting, error) {
+	url := fmt.Sprintf("%s/api/en/stats/%s/%s", sf6Base, endpoint, yyyymm)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -64,7 +65,7 @@ func (c *Client) FetchFighting(ctx context.Context, yyyymm string) ([]domain.Lea
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	req.Header.Set("Sec-Fetch-Mode", "cors")
 	req.Header.Set("Sec-Fetch-Dest", "empty")
-	req.Header.Set("Referer", fmt.Sprintf("%s/stats/dia/%s", sf6Base, yyyymm))
+	req.Header.Set("Referer", fmt.Sprintf("%s/stats/%s/%s", sf6Base, endpoint, yyyymm))
 	req.Header.Set("user-agent", userAgent)
 	req.Header.Set("Cookie", os.Getenv("SF6_COOKIE"))
 
@@ -80,12 +81,12 @@ func (c *Client) FetchFighting(ctx context.Context, yyyymm string) ([]domain.Lea
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("SF6 dia %s returned %d", yyyymm, resp.StatusCode)
+		return nil, fmt.Errorf("SF6 %s/%s returned %d", endpoint, yyyymm, resp.StatusCode)
 	}
 
 	var result sf6DiaResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("SF6 dia %s decode error: %w", yyyymm, err)
+		return nil, fmt.Errorf("SF6 %s/%s decode error: %w", endpoint, yyyymm, err)
 	}
 
 	leagues := make([]domain.LeagueFighting, 0, len(result.DiaData.CI.CISort))
@@ -126,6 +127,45 @@ func (c *Client) FetchFighting(ctx context.Context, yyyymm string) ([]domain.Lea
 		})
 	}
 
-	log.Printf("[sf6-fighting] %s: %d leagues fetched", yyyymm, len(leagues))
 	return leagues, nil
+}
+
+// FetchFighting combina os endpoints "dia" (rankings normais) e "dia_master"
+// (4 tiers acima de master) em paralelo. Tolera falha de um dos dois.
+func (c *Client) FetchFighting(ctx context.Context, yyyymm string) ([]domain.LeagueFighting, error) {
+	type result struct {
+		leagues []domain.LeagueFighting
+		err     error
+	}
+
+	regularCh := make(chan result, 1)
+	masterCh := make(chan result, 1)
+
+	go func() {
+		l, err := c.fetchFightingEndpoint(ctx, "dia", yyyymm)
+		regularCh <- result{l, err}
+	}()
+	go func() {
+		l, err := c.fetchFightingEndpoint(ctx, "dia_master", yyyymm)
+		masterCh <- result{l, err}
+	}()
+
+	regular := <-regularCh
+	master := <-masterCh
+
+	if regular.err != nil && master.err != nil {
+		return nil, fmt.Errorf("SF6 fighting %s: ambos endpoints falharam: regular=%v, master=%v",
+			yyyymm, regular.err, master.err)
+	}
+	if regular.err != nil {
+		log.Printf("[sf6-fighting] %s: endpoint regular falhou: %v", yyyymm, regular.err)
+	}
+	if master.err != nil {
+		log.Printf("[sf6-fighting] %s: endpoint master falhou: %v", yyyymm, master.err)
+	}
+
+	merged := append(regular.leagues, master.leagues...)
+	log.Printf("[sf6-fighting] %s: %d leagues (regular=%d, master=%d)",
+		yyyymm, len(merged), len(regular.leagues), len(master.leagues))
+	return merged, nil
 }

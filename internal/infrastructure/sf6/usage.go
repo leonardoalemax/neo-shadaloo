@@ -37,9 +37,10 @@ type sf6UsageAPIResponse struct {
 	UsagerateData []sf6UsageGroup `json:"usagerateData"`
 }
 
-// FetchUsage fetches character usage data for a given YYYYMM period.
-func (c *Client) FetchUsage(ctx context.Context, yyyymm string) ([]domain.LeagueUsage, error) {
-	url := fmt.Sprintf("%s/api/en/stats/usagerate/%s", sf6Base, yyyymm)
+// fetchUsageEndpoint busca um endpoint específico (usagerate ou usagerate_master)
+// e devolve as leagues parseadas.
+func (c *Client) fetchUsageEndpoint(ctx context.Context, endpoint, yyyymm string) ([]domain.LeagueUsage, error) {
+	url := fmt.Sprintf("%s/api/en/stats/%s/%s", sf6Base, endpoint, yyyymm)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -50,7 +51,7 @@ func (c *Client) FetchUsage(ctx context.Context, yyyymm string) ([]domain.League
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	req.Header.Set("Sec-Fetch-Mode", "cors")
 	req.Header.Set("Sec-Fetch-Dest", "empty")
-	req.Header.Set("Referer", fmt.Sprintf("%s/stats/usagerate/%s", sf6Base, yyyymm))
+	req.Header.Set("Referer", fmt.Sprintf("%s/stats/%s/%s", sf6Base, endpoint, yyyymm))
 	req.Header.Set("user-agent", userAgent)
 	req.Header.Set("Cookie", os.Getenv("SF6_COOKIE"))
 
@@ -66,12 +67,12 @@ func (c *Client) FetchUsage(ctx context.Context, yyyymm string) ([]domain.League
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("SF6 usage %s returned %d", yyyymm, resp.StatusCode)
+		return nil, fmt.Errorf("SF6 %s/%s returned %d", endpoint, yyyymm, resp.StatusCode)
 	}
 
 	var result sf6UsageAPIResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("SF6 usage %s decode error: %w", yyyymm, err)
+		return nil, fmt.Errorf("SF6 %s/%s decode error: %w", endpoint, yyyymm, err)
 	}
 
 	var leagues []domain.LeagueUsage
@@ -95,6 +96,47 @@ func (c *Client) FetchUsage(ctx context.Context, yyyymm string) ([]domain.League
 		}
 	}
 
-	log.Printf("[sf6-usage] %s: %d leagues fetched", yyyymm, len(leagues))
 	return leagues, nil
+}
+
+// FetchUsage busca character usage data para um determinado YYYYMM, combinando
+// os endpoints "usagerate" (rankings normais) e "usagerate_master" (4 tiers
+// acima de master) em paralelo. Se um dos dois falhar, devolve apenas o que
+// deu certo (com log do erro do outro). Só falha se ambos errarem.
+func (c *Client) FetchUsage(ctx context.Context, yyyymm string) ([]domain.LeagueUsage, error) {
+	type result struct {
+		leagues []domain.LeagueUsage
+		err     error
+	}
+
+	regularCh := make(chan result, 1)
+	masterCh := make(chan result, 1)
+
+	go func() {
+		l, err := c.fetchUsageEndpoint(ctx, "usagerate", yyyymm)
+		regularCh <- result{l, err}
+	}()
+	go func() {
+		l, err := c.fetchUsageEndpoint(ctx, "usagerate_master", yyyymm)
+		masterCh <- result{l, err}
+	}()
+
+	regular := <-regularCh
+	master := <-masterCh
+
+	if regular.err != nil && master.err != nil {
+		return nil, fmt.Errorf("SF6 usage %s: ambos endpoints falharam: regular=%v, master=%v",
+			yyyymm, regular.err, master.err)
+	}
+	if regular.err != nil {
+		log.Printf("[sf6-usage] %s: endpoint regular falhou: %v", yyyymm, regular.err)
+	}
+	if master.err != nil {
+		log.Printf("[sf6-usage] %s: endpoint master falhou: %v", yyyymm, master.err)
+	}
+
+	merged := append(regular.leagues, master.leagues...)
+	log.Printf("[sf6-usage] %s: %d leagues (regular=%d, master=%d)",
+		yyyymm, len(merged), len(regular.leagues), len(master.leagues))
+	return merged, nil
 }
