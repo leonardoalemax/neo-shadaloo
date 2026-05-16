@@ -7,7 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	app "neo-shadaloo/internal/application/ranking"
-	domain "neo-shadaloo/internal/domain/ranking"
+	dranking "neo-shadaloo/internal/domain/ranking"
 )
 
 // PostRankingSyncAll dispara o sync de TODOS os 4 rankings em background.
@@ -40,7 +40,7 @@ func PostRankingSyncAll(svc *app.Service) http.HandlerFunc {
 //	@Router			/v1/ranking/{type}/sync [post]
 func PostRankingSync(svc *app.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rt := domain.RankingType(chi.URLParam(r, "type"))
+		rt := dranking.RankingType(chi.URLParam(r, "type"))
 		if !isValidRankingType(rt) {
 			http.Error(w, `{"error":"ranking_type inválido"}`, http.StatusBadRequest)
 			return
@@ -61,11 +61,11 @@ func PostRankingSync(svc *app.Service) http.HandlerFunc {
 //	@Param			type	path	string	true	"Tipo de ranking"
 //	@Tags			ranking
 //	@Produce		json
-//	@Success		200	{object}	domain.SnapshotMeta
+//	@Success		200	{object}	dranking.SnapshotMeta
 //	@Router			/v1/ranking/{type}/status [get]
 func GetRankingStatus(svc *app.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rt := domain.RankingType(chi.URLParam(r, "type"))
+		rt := dranking.RankingType(chi.URLParam(r, "type"))
 		if !isValidRankingType(rt) {
 			http.Error(w, `{"error":"ranking_type inválido"}`, http.StatusBadRequest)
 			return
@@ -98,8 +98,8 @@ func GetRankingStatus(svc *app.Service) http.HandlerFunc {
 	}
 }
 
-func isValidRankingType(rt domain.RankingType) bool {
-	for _, valid := range domain.AllRankingTypes() {
+func isValidRankingType(rt dranking.RankingType) bool {
+	for _, valid := range dranking.AllRankingTypes() {
 		if rt == valid {
 			return true
 		}

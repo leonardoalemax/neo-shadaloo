@@ -45,6 +45,17 @@ definitions:
       wins:
         type: integer
     type: object
+  battlelog.CharacterRankStat:
+    properties:
+      league_rank:
+        type: integer
+      lp:
+        type: integer
+      name:
+        type: string
+      tool_name:
+        type: string
+    type: object
   battlelog.DayStat:
     properties:
       total:
@@ -85,6 +96,37 @@ definitions:
         $ref: '#/definitions/battlelog.ProfileComment'
       title_data:
         $ref: '#/definitions/battlelog.TitleData'
+    type: object
+  battlelog.HourStat:
+    properties:
+      hour:
+        type: integer
+      total:
+        type: integer
+      wins:
+        type: integer
+    type: object
+  battlelog.HourlyStats:
+    properties:
+      hours:
+        items:
+          $ref: '#/definitions/battlelog.HourStat'
+        type: array
+    type: object
+  battlelog.LPEntry:
+    properties:
+      date:
+        description: YYYY-MM-DD
+        type: string
+      lp:
+        type: integer
+    type: object
+  battlelog.LPHistory:
+    properties:
+      entries:
+        items:
+          $ref: '#/definitions/battlelog.LPEntry'
+        type: array
     type: object
   battlelog.LeagueRankInfo:
     properties:
@@ -212,6 +254,86 @@ definitions:
       wins:
         type: integer
     type: object
+  ranking.RankingType:
+    enum:
+    - league_point
+    - arcade_score
+    - kudos
+    - master_rating
+    type: string
+    x-enum-comments:
+      RankingArcade: Pontuação no Arcade
+      RankingKudos: Kudos (PP)
+      RankingLeague: Pontos da Liga
+      RankingMaster: Avaliação de Mestre
+    x-enum-descriptions:
+    - Pontos da Liga
+    - Pontuação no Arcade
+    - Kudos (PP)
+    - Avaliação de Mestre
+    x-enum-varnames:
+    - RankingLeague
+    - RankingArcade
+    - RankingKudos
+    - RankingMaster
+  ranking.SnapshotMeta:
+    properties:
+      last_synced_at:
+        description: quando o último sync COMPLETOU com sucesso
+        type: integer
+      ranking_type:
+        $ref: '#/definitions/ranking.RankingType'
+      started_at:
+        description: quando o sync atual/último começou
+        type: integer
+      status:
+        description: '"running", "done", "failed"'
+        type: string
+      synced_pages:
+        type: integer
+      total_count:
+        type: integer
+      total_pages:
+        type: integer
+      updated_at:
+        description: última atividade (atualizado a cada progresso)
+        type: integer
+    type: object
+  usage.CharUsageEntry:
+    properties:
+      character_alpha:
+        type: string
+      character_tool_name:
+        type: string
+      play_rate:
+        type: number
+      previous_rate:
+        type: number
+    type: object
+  usage.LeagueUsage:
+    properties:
+      entries:
+        items:
+          $ref: '#/definitions/usage.CharUsageEntry'
+        type: array
+      league_alpha:
+        type: string
+      league_rank:
+        type: integer
+      operation_type:
+        type: integer
+    type: object
+  usage.UsageSnapshot:
+    properties:
+      cached_at:
+        type: integer
+      leagues:
+        items:
+          $ref: '#/definitions/usage.LeagueUsage'
+        type: array
+      yyyymm:
+        type: string
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -280,6 +402,84 @@ paths:
           schema:
             type: string
       summary: Get calendar heatmap data for a user
+      tags:
+      - battlelog
+  /v1/battlelog/{userId}/character-ranks:
+    get:
+      parameters:
+      - description: SF6 fighter ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/battlelog.CharacterRankStat'
+            type: array
+      summary: Get most recent LP and rank per character for a user
+      tags:
+      - battlelog
+  /v1/battlelog/{userId}/hourly:
+    get:
+      description: Returns win/loss counts grouped by hour of day (0–23) for a heatmap
+        chart.
+      parameters:
+      - description: SF6 fighter ID
+        example: "3378249682"
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/battlelog.HourlyStats'
+        "400":
+          description: userId required
+          schema:
+            type: string
+        "500":
+          description: internal server error
+          schema:
+            type: string
+      summary: Get hourly win-rate heatmap for a user
+      tags:
+      - battlelog
+  /v1/battlelog/{userId}/lp-history:
+    get:
+      description: Returns daily LP values (last match per day) sorted oldest-first,
+        for plotting an LP progression chart.
+      parameters:
+      - description: SF6 fighter ID
+        example: "3378249682"
+        in: path
+        name: userId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/battlelog.LPHistory'
+        "400":
+          description: userId required
+          schema:
+            type: string
+        "500":
+          description: internal server error
+          schema:
+            type: string
+      summary: Get LP evolution history for a user
       tags:
       - battlelog
   /v1/battlelog/{userId}/opponents:
@@ -481,6 +681,144 @@ paths:
       summary: Health check
       tags:
       - system
+  /v1/ranking/{type}/status:
+    get:
+      parameters:
+      - description: Tipo de ranking
+        in: path
+        name: type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ranking.SnapshotMeta'
+      summary: Estado de sync de um ranking
+      tags:
+      - ranking
+  /v1/ranking/{type}/sync:
+    post:
+      parameters:
+      - description: Tipo de ranking
+        enum:
+        - league_point
+        - arcade_score
+        - kudos
+        - master_rating
+        in: path
+        name: type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Dispara sync de um ranking específico
+      tags:
+      - ranking
+  /v1/ranking/sync:
+    post:
+      description: Faz o crawl de todas as páginas dos 4 rankings (league, arcade,
+        kudos, master) em background. Snapshot atual — substitui dados anteriores.
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Dispara sync de todos os rankings globais
+      tags:
+      - ranking
+  /v1/usage/{yyyymm}:
+    get:
+      description: Returns cached character usage rates (usagerate_list) for the given
+        YYYYMM period. Triggers a background sync if missing or stale (>24h).
+      parameters:
+      - description: Year-month (e.g. 202602)
+        in: path
+        name: yyyymm
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/usage.UsageSnapshot'
+        "400":
+          description: invalid yyyymm
+          schema:
+            type: string
+        "500":
+          description: internal server error
+          schema:
+            type: string
+      summary: Get character usage rates for a given month
+      tags:
+      - usage
+  /v1/usage/{yyyymm}/sync:
+    post:
+      description: Triggers an immediate background sync with the SF6 API for the
+        given YYYYMM period. Returns 202 immediately.
+      parameters:
+      - description: Year-month (e.g. 202602)
+        in: path
+        name: yyyymm
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: invalid yyyymm
+          schema:
+            type: string
+      summary: Force a usage data sync for a given month
+      tags:
+      - usage
+  /v1/usage/months:
+    get:
+      description: Returns YYYYMM periods that have cached usage data, sorted newest-first.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "500":
+          description: internal server error
+          schema:
+            type: string
+      summary: List available usage months
+      tags:
+      - usage
 schemes:
 - http
 - ws

@@ -101,6 +101,121 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/battlelog/{userId}/character-ranks": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "battlelog"
+                ],
+                "summary": "Get most recent LP and rank per character for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "SF6 fighter ID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/battlelog.CharacterRankStat"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/battlelog/{userId}/hourly": {
+            "get": {
+                "description": "Returns win/loss counts grouped by hour of day (0–23) for a heatmap chart.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "battlelog"
+                ],
+                "summary": "Get hourly win-rate heatmap for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "3378249682",
+                        "description": "SF6 fighter ID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/battlelog.HourlyStats"
+                        }
+                    },
+                    "400": {
+                        "description": "userId required",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/battlelog/{userId}/lp-history": {
+            "get": {
+                "description": "Returns daily LP values (last match per day) sorted oldest-first, for plotting an LP progression chart.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "battlelog"
+                ],
+                "summary": "Get LP evolution history for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "3378249682",
+                        "description": "SF6 fighter ID",
+                        "name": "userId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/battlelog.LPHistory"
+                        }
+                    },
+                    "400": {
+                        "description": "userId required",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/battlelog/{userId}/opponents": {
             "get": {
                 "description": "Returns stats grouped by opponent character, sorted by total battles descending. Includes priority score for training recommendations.",
@@ -383,6 +498,211 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/v1/ranking/sync": {
+            "post": {
+                "description": "Faz o crawl de todas as páginas dos 4 rankings (league, arcade, kudos, master) em background. Snapshot atual — substitui dados anteriores.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ranking"
+                ],
+                "summary": "Dispara sync de todos os rankings globais",
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/ranking/{type}/status": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ranking"
+                ],
+                "summary": "Estado de sync de um ranking",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tipo de ranking",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ranking.SnapshotMeta"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/ranking/{type}/sync": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ranking"
+                ],
+                "summary": "Dispara sync de um ranking específico",
+                "parameters": [
+                    {
+                        "enum": [
+                            "league_point",
+                            "arcade_score",
+                            "kudos",
+                            "master_rating"
+                        ],
+                        "type": "string",
+                        "description": "Tipo de ranking",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/usage/months": {
+            "get": {
+                "description": "Returns YYYYMM periods that have cached usage data, sorted newest-first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "usage"
+                ],
+                "summary": "List available usage months",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/usage/{yyyymm}": {
+            "get": {
+                "description": "Returns cached character usage rates (usagerate_list) for the given YYYYMM period. Triggers a background sync if missing or stale (\u003e24h).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "usage"
+                ],
+                "summary": "Get character usage rates for a given month",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Year-month (e.g. 202602)",
+                        "name": "yyyymm",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/usage.UsageSnapshot"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid yyyymm",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/usage/{yyyymm}/sync": {
+            "post": {
+                "description": "Triggers an immediate background sync with the SF6 API for the given YYYYMM period. Returns 202 immediately.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "usage"
+                ],
+                "summary": "Force a usage data sync for a given month",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Year-month (e.g. 202602)",
+                        "name": "yyyymm",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "invalid yyyymm",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -455,6 +775,23 @@ const docTemplate = `{
                 }
             }
         },
+        "battlelog.CharacterRankStat": {
+            "type": "object",
+            "properties": {
+                "league_rank": {
+                    "type": "integer"
+                },
+                "lp": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "tool_name": {
+                    "type": "string"
+                }
+            }
+        },
         "battlelog.DayStat": {
             "type": "object",
             "properties": {
@@ -515,6 +852,54 @@ const docTemplate = `{
                 },
                 "title_data": {
                     "$ref": "#/definitions/battlelog.TitleData"
+                }
+            }
+        },
+        "battlelog.HourStat": {
+            "type": "object",
+            "properties": {
+                "hour": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "wins": {
+                    "type": "integer"
+                }
+            }
+        },
+        "battlelog.HourlyStats": {
+            "type": "object",
+            "properties": {
+                "hours": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/battlelog.HourStat"
+                    }
+                }
+            }
+        },
+        "battlelog.LPEntry": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "lp": {
+                    "type": "integer"
+                }
+            }
+        },
+        "battlelog.LPHistory": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/battlelog.LPEntry"
+                    }
                 }
             }
         },
@@ -709,6 +1094,120 @@ const docTemplate = `{
                 },
                 "wins": {
                     "type": "integer"
+                }
+            }
+        },
+        "ranking.RankingType": {
+            "type": "string",
+            "enum": [
+                "league_point",
+                "arcade_score",
+                "kudos",
+                "master_rating"
+            ],
+            "x-enum-comments": {
+                "RankingArcade": "Pontuação no Arcade",
+                "RankingKudos": "Kudos (PP)",
+                "RankingLeague": "Pontos da Liga",
+                "RankingMaster": "Avaliação de Mestre"
+            },
+            "x-enum-descriptions": [
+                "Pontos da Liga",
+                "Pontuação no Arcade",
+                "Kudos (PP)",
+                "Avaliação de Mestre"
+            ],
+            "x-enum-varnames": [
+                "RankingLeague",
+                "RankingArcade",
+                "RankingKudos",
+                "RankingMaster"
+            ]
+        },
+        "ranking.SnapshotMeta": {
+            "type": "object",
+            "properties": {
+                "last_synced_at": {
+                    "description": "quando o último sync COMPLETOU com sucesso",
+                    "type": "integer"
+                },
+                "ranking_type": {
+                    "$ref": "#/definitions/ranking.RankingType"
+                },
+                "started_at": {
+                    "description": "quando o sync atual/último começou",
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "\"running\", \"done\", \"failed\"",
+                    "type": "string"
+                },
+                "synced_pages": {
+                    "type": "integer"
+                },
+                "total_count": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "description": "última atividade (atualizado a cada progresso)",
+                    "type": "integer"
+                }
+            }
+        },
+        "usage.CharUsageEntry": {
+            "type": "object",
+            "properties": {
+                "character_alpha": {
+                    "type": "string"
+                },
+                "character_tool_name": {
+                    "type": "string"
+                },
+                "play_rate": {
+                    "type": "number"
+                },
+                "previous_rate": {
+                    "type": "number"
+                }
+            }
+        },
+        "usage.LeagueUsage": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usage.CharUsageEntry"
+                    }
+                },
+                "league_alpha": {
+                    "type": "string"
+                },
+                "league_rank": {
+                    "type": "integer"
+                },
+                "operation_type": {
+                    "type": "integer"
+                }
+            }
+        },
+        "usage.UsageSnapshot": {
+            "type": "object",
+            "properties": {
+                "cached_at": {
+                    "type": "integer"
+                },
+                "leagues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usage.LeagueUsage"
+                    }
+                },
+                "yyyymm": {
+                    "type": "string"
                 }
             }
         }

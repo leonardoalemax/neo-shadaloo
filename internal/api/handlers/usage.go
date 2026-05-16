@@ -46,7 +46,7 @@ func GetUsageMonths(svc *appusage.UsageService) http.HandlerFunc {
 //	@Tags			usage
 //	@Produce		json
 //	@Param			yyyymm	path		string				true	"Year-month (e.g. 202602)"
-//	@Success		200		{object}	domain.UsageSnapshot
+//	@Success		200		{object}	usage.UsageSnapshot
 //	@Failure		400		{string}	string	"invalid yyyymm"
 //	@Failure		500		{string}	string	"internal server error"
 //	@Router			/v1/usage/{yyyymm} [get]
