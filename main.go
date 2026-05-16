@@ -34,7 +34,26 @@ import (
 func main() {
 	if err := godotenv.Load(); err == nil {
 		log.Println("Loaded .env file")
+	} else {
+		log.Printf("No .env loaded: %v (using container envs)", err)
 	}
+
+	// Debug: log key envs (mascarando segredos)
+	logEnv := func(k string, mask bool) {
+		v := os.Getenv(k)
+		if v == "" {
+			log.Printf("[env] %s=<EMPTY>", k)
+			return
+		}
+		if mask && len(v) > 10 {
+			v = v[:6] + "..." + v[len(v)-4:]
+		}
+		log.Printf("[env] %s=%s", k, v)
+	}
+	logEnv("DATABASE_URL", true)
+	logEnv("SF6_COOKIE", true)
+	logEnv("KAFKA_BROKER", false)
+	logEnv("PORT", false)
 
 	ctx := context.Background()
 
