@@ -59,6 +59,11 @@ func main() {
 	fightingSvc := appfighting.NewFightingService(fightingRepo, sf6Client)
 	rankingSvc  := appranking.NewService(rankingRepo, sf6Client, playerIndexRepo)
 
+	// ── Kafka consumers ──────────────────────────────────────────────────────
+	if err := rankingSvc.InitKafka(ctx); err != nil {
+		log.Printf("Kafka init warning (ranking sync will use in-memory fallback): %v", err)
+	}
+
 	// ── API ──────────────────────────────────────────────────────────────────
 	router := api.NewRouter(svc, usageSvc, fightingSvc, rankingSvc, hub)
 
