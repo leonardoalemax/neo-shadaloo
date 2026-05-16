@@ -12,10 +12,10 @@ import (
 
 // Configuração do crawl. Valores conservadores pra não tomar 429 do SF6.
 const (
-	defaultConcurrency = 10                // workers paralelos chamando o SF6
-	defaultBatchSize   = 200               // entries por insert no banco
-	requestPause       = 50 * time.Millisecond // pausa entre requests por worker
-	progressLogEvery   = 500               // loga a cada N páginas
+	defaultConcurrency = 10                     // workers paralelos chamando o SF6
+	defaultBatchSize   = 200                    // entries por insert no banco
+	requestPause       = 200 * time.Millisecond // pausa entre requests por worker
+	progressLogEvery   = 500                    // loga a cada N páginas
 )
 
 // Service orquestra o sync do ranking global.
@@ -254,7 +254,10 @@ func (s *Service) indexPlayers(ctx context.Context, entries []domain.Entry) {
 	}
 
 	go func(p []battlelog.PlayerEntry) {
-		if err := s.playerIndex.Upsert(context.Background(), p); err != nil {
+		// Usa UpsertPreserveCharacter — players novos entram com o character do
+		// ranking, mas players já existentes mantêm o character original
+		// (provavelmente vindo do battlelog sync que é mais autoritativo).
+		if err := s.playerIndex.UpsertPreserveCharacter(context.Background(), p); err != nil {
 			log.Printf("[ranking] player_index upsert falhou (%d players): %v", len(p), err)
 		}
 	}(players)

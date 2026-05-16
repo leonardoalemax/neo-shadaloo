@@ -36,6 +36,29 @@ func (r *playerIndexRepository) Upsert(ctx context.Context, players []domain.Pla
 	return nil
 }
 
+// UpsertPreserveCharacter insere players novos normalmente, mas em conflito
+// (player já existe) só atualiza short_id e updated_at. O character_tool_name
+// original é preservado — útil pra ranking sync que vê o player com personagem
+// diferente do favorito.
+func (r *playerIndexRepository) UpsertPreserveCharacter(ctx context.Context, players []domain.PlayerEntry) error {
+	if len(players) == 0 {
+		return nil
+	}
+	for _, p := range players {
+		_, err := r.pool.Exec(ctx, `
+			INSERT INTO player_index (fighter_id, short_id, character_tool_name, updated_at)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (fighter_id) DO UPDATE SET
+				short_id   = EXCLUDED.short_id,
+				updated_at = EXCLUDED.updated_at
+		`, p.FighterID, p.ShortID, p.CharacterToolName, p.UpdatedAt)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *playerIndexRepository) Search(ctx context.Context, query string) ([]domain.PlayerEntry, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT fighter_id, short_id, character_tool_name, updated_at
