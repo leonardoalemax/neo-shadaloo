@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	httpswagger "github.com/swaggo/http-swagger/v2"
 
@@ -54,6 +55,14 @@ func main() {
 	logEnv("SF6_COOKIE", true)
 	logEnv("KAFKA_BROKER", false)
 	logEnv("PORT", false)
+
+	// Loga só o host parseado do DATABASE_URL (sem credenciais)
+	if cfg, err := pgxpool.ParseConfig(os.Getenv("DATABASE_URL")); err == nil {
+		log.Printf("[env] DATABASE_URL host=%s port=%d db=%s user=%s",
+			cfg.ConnConfig.Host, cfg.ConnConfig.Port, cfg.ConnConfig.Database, cfg.ConnConfig.User)
+	} else {
+		log.Printf("[env] DATABASE_URL parse error: %v", err)
+	}
 
 	ctx := context.Background()
 
