@@ -19,6 +19,9 @@ type Repository interface {
 	// DistinctCharacters retorna personagens distintos com contagem de players.
 	DistinctCharacters(ctx context.Context) ([]CharacterCount, error)
 
+	// DistinctRanks retorna ranks distintos com contagem de players.
+	DistinctRanks(ctx context.Context) ([]RankCount, error)
+
 	// CountPlayers retorna o total de players salvos (pra status).
 	CountPlayers(ctx context.Context) (int, error)
 }

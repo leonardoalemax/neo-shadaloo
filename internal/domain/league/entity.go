@@ -53,3 +53,9 @@ type CharacterCount struct {
 	CharacterName     string `json:"character_name"`
 	PlayerCount       int    `json:"player_count"`
 }
+
+// RankCount representa um rank e quantos players estão nele.
+type RankCount struct {
+	LeagueRank int `json:"league_rank"`
+	PlayerCount int `json:"player_count"`
+}

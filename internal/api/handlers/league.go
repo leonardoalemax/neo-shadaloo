@@ -12,6 +12,7 @@ import (
 // referências usadas pelo swag pra gerar schemas
 var _ = dleague.SyncMeta{}
 var _ = dleague.CountryPlayerCount{}
+var _ = dleague.RankCount{}
 
 // PostLeagueSync dispara o sync do ranking de league em background.
 //
@@ -94,6 +95,25 @@ func GetLeaguePlayersByCountry(svc *app.Service) http.HandlerFunc {
 func GetLeagueCharacters(svc *app.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		out, err := svc.DistinctCharacters(r.Context())
+		if err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
+	}
+}
+
+// GetLeagueRanks devolve ranks distintos com contagem de players.
+//
+//	@Summary		Ranks distintos (league)
+//	@Tags			league
+//	@Produce		json
+//	@Success		200	{array}	dleague.RankCount
+//	@Router			/v1/league/ranks [get]
+func GetLeagueRanks(svc *app.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		out, err := svc.DistinctRanks(r.Context())
 		if err != nil {
 			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 			return

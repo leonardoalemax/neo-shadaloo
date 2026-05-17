@@ -284,3 +284,7 @@ func (s *Service) PlayersByCountry(ctx context.Context, f domain.MapFilter) ([]d
 func (s *Service) DistinctCharacters(ctx context.Context) ([]domain.CharacterCount, error) {
 	return s.repo.DistinctCharacters(ctx)
 }
+
+func (s *Service) DistinctRanks(ctx context.Context) ([]domain.RankCount, error) {
+	return s.repo.DistinctRanks(ctx)
+}

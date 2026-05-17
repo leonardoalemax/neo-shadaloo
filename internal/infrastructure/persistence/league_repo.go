@@ -167,6 +167,30 @@ func (r *LeagueRepository) DistinctCharacters(ctx context.Context) ([]domain.Cha
 	return out, nil
 }
 
+func (r *LeagueRepository) DistinctRanks(ctx context.Context) ([]domain.RankCount, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT league_rank, COUNT(*) AS player_count
+		FROM league_player
+		WHERE league_rank > 0
+		GROUP BY league_rank
+		ORDER BY league_rank ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []domain.RankCount
+	for rows.Next() {
+		var c domain.RankCount
+		if err := rows.Scan(&c.LeagueRank, &c.PlayerCount); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
 func (r *LeagueRepository) CountPlayers(ctx context.Context) (int, error) {
 	var n int
 	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM league_player`).Scan(&n)
