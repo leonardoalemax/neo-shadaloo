@@ -402,7 +402,7 @@ func GetPlayerSearch(svc *app.BattlelogService) http.HandlerFunc {
 		q := r.URL.Query().Get("q")
 		if q == "" {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]domain.PlayerEntry{})
+			json.NewEncoder(w).Encode([]domain.Player{})
 			return
 		}
 		results, err := svc.SearchPlayers(r.Context(), q)
@@ -412,7 +412,7 @@ func GetPlayerSearch(svc *app.BattlelogService) http.HandlerFunc {
 			return
 		}
 		if results == nil {
-			results = []domain.PlayerEntry{}
+			results = []domain.Player{}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")

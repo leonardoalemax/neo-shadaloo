@@ -72,14 +72,14 @@ func main() {
 
 	cfgRepo := persistence.NewConfigRepository(persistence.Pool)
 	battlelogRepo := persistence.NewBattlelogRepository(persistence.Pool)
-	playerIndexRepo := persistence.NewPlayerIndexRepository(persistence.Pool)
+	playerRepo := persistence.NewPlayerRepository(persistence.Pool)
 	usageRepo := persistence.NewUsageRepository(persistence.Pool)
 	fightingRepo := persistence.NewFightingRepository(persistence.Pool)
 	hub := realtime.NewHub()
 	sf6Client := sf6.NewClient(cfgRepo)
 
 	// ── Application ──────────────────────────────────────────────────────────
-	svc := app.NewBattlelogService(battlelogRepo, playerIndexRepo, sf6Client, hub)
+	svc := app.NewBattlelogService(battlelogRepo, playerRepo, sf6Client, hub)
 	usageSvc := appusage.NewUsageService(usageRepo, sf6Client)
 	fightingSvc := appfighting.NewFightingService(fightingRepo, sf6Client)
 

@@ -13,10 +13,10 @@ import (
 
 // BattlelogService orchestrates battlelog use cases.
 type BattlelogService struct {
-	repo        domain.BattlelogRepository
-	playerIndex domain.PlayerIndexRepository
-	sf6         domain.SF6Client
-	publisher   domain.EventPublisher
+	repo    domain.BattlelogRepository
+	players domain.PlayerRepository
+	sf6     domain.SF6Client
+	publisher domain.EventPublisher
 
 	mu      sync.Mutex
 	syncing map[string]bool
@@ -24,16 +24,16 @@ type BattlelogService struct {
 
 func NewBattlelogService(
 	repo domain.BattlelogRepository,
-	playerIndex domain.PlayerIndexRepository,
+	players domain.PlayerRepository,
 	sf6 domain.SF6Client,
 	publisher domain.EventPublisher,
 ) *BattlelogService {
 	return &BattlelogService{
-		repo:        repo,
-		playerIndex: playerIndex,
-		sf6:         sf6,
-		publisher:   publisher,
-		syncing:     make(map[string]bool),
+		repo:    repo,
+		players: players,
+		sf6:     sf6,
+		publisher: publisher,
+		syncing: make(map[string]bool),
 	}
 }
 
@@ -48,7 +48,7 @@ func (s *BattlelogService) GetBattlelog(ctx context.Context, userID string) (*do
 
 	if bl == nil {
 		s.TriggerSync(userID)
-		go s.playerIndex.MarkSyncable(context.Background(), userID) //nolint
+		go s.players.MarkSyncable(context.Background(), userID) //nolint
 		return &domain.Battlelog{UserID: userID, Replays: []domain.Replay{}}, nil
 	}
 
@@ -56,7 +56,7 @@ func (s *BattlelogService) GetBattlelog(ctx context.Context, userID string) (*do
 		s.TriggerSync(userID)
 	}
 
-	go s.playerIndex.MarkSyncable(context.Background(), userID) //nolint
+	go s.players.MarkSyncable(context.Background(), userID) //nolint
 	return bl, nil
 }
 
@@ -428,43 +428,112 @@ func (s *BattlelogService) ComputeCharacterRanks(ctx context.Context, userID str
 	return result, nil
 }
 
-// indexPlayers upserts all players seen in a battlelog into the search index.
+// indexPlayers upserts players + characters vistos no battlelog.
 func (s *BattlelogService) indexPlayers(ctx context.Context, bl *domain.Battlelog) {
 	now := time.Now().UnixMilli()
-	seen := make(map[string]domain.PlayerEntry)
+
+	// 1. Upsert do dono via BannerInfo (dados ricos)
+	if bl.BannerInfo != nil && bl.BannerInfo.PersonalInfo.ShortID > 0 {
+		b := bl.BannerInfo
+		if err := s.players.UpsertFromBanner(ctx, domain.Player{
+			ShortID:                   b.PersonalInfo.ShortID,
+			FighterID:                 b.PersonalInfo.FighterID,
+			PlatformName:              b.PersonalInfo.PlatformName,
+			PlatformToolName:          b.PersonalInfo.PlatformToolName,
+			HomeID:                    b.HomeID,
+			FavoriteCharacterToolName: b.FavoriteCharacterToolName,
+			FavoriteCharacterName:     b.FavoriteCharacterName,
+			LeaguePoint:              b.FavoriteCharacterLeagueInfo.LeaguePoint,
+			LeagueRank:               b.FavoriteCharacterLeagueInfo.LeagueRank,
+			TitlePlateName:           b.TitleData.TitleDataPlateName,
+			TitleVal:                 b.TitleData.TitleDataVal,
+			PPFightingGround:         b.FavoriteCharacterPlayPoint.FightingGround,
+			PPWorldTour:              b.FavoriteCharacterPlayPoint.WorldTour,
+			PPBattleHub:              b.FavoriteCharacterPlayPoint.BattleHub,
+			UpdatedAt:                now,
+		}); err != nil {
+			log.Printf("[player] banner upsert error for %s: %v", bl.UserID, err)
+		}
+	}
+
+	// 2. Coletar players e characters dos replays
+	seenPlayers := make(map[int64]domain.Player)
+	// charKey = "shortID|charToolName"
+	seenChars := make(map[string]domain.PlayerCharacter)
 
 	for _, r := range bl.Replays {
 		for _, pi := range []domain.PlayerInfo{r.Player1Info, r.Player2Info} {
-			id := pi.Player.FighterID
-			if id == "" {
+			sid := pi.Player.ShortID
+			if sid == 0 || pi.Player.FighterID == "" {
 				continue
 			}
-			if _, ok := seen[id]; !ok {
-				seen[id] = domain.PlayerEntry{
-					FighterID:         id,
-					ShortID:           pi.Player.ShortID,
-					CharacterToolName: pi.PlayingCharacterToolName,
-					UpdatedAt:         now,
+
+			// Player (dados básicos do replay)
+			if _, ok := seenPlayers[sid]; !ok {
+				seenPlayers[sid] = domain.Player{
+					ShortID:          sid,
+					FighterID:        pi.Player.FighterID,
+					PlatformID:       pi.Player.PlatformID,
+					PlatformName:     pi.Player.PlatformName,
+					PlatformToolName: pi.Player.PlatformToolName,
+					LeaguePoint:      pi.LeaguePoint,
+					LeagueRank:       pi.LeagueRank,
+					UpdatedAt:        r.UploadedAt,
+				}
+			}
+
+			// Character (personagem usado nesse replay)
+			charKey := fmt.Sprintf("%d|%s", sid, pi.PlayingCharacterToolName)
+			if pi.PlayingCharacterToolName != "" {
+				if existing, ok := seenChars[charKey]; !ok || r.UploadedAt > existing.LastSeenAt {
+					seenChars[charKey] = domain.PlayerCharacter{
+						ShortID:           sid,
+						CharacterToolName: pi.PlayingCharacterToolName,
+						CharacterName:     pi.PlayingCharacterName,
+						LeaguePoint:       pi.LeaguePoint,
+						LeagueRank:        pi.LeagueRank,
+						LastSeenAt:        r.UploadedAt,
+					}
 				}
 			}
 		}
 	}
 
-	entries := make([]domain.PlayerEntry, 0, len(seen))
-	for _, e := range seen {
-		entries = append(entries, e)
+	// 3. Upsert players
+	players := make([]domain.Player, 0, len(seenPlayers))
+	for _, p := range seenPlayers {
+		players = append(players, p)
+	}
+	if err := s.players.UpsertFromReplay(ctx, players); err != nil {
+		log.Printf("[player] replay upsert error for %s: %v", bl.UserID, err)
 	}
 
-	if err := s.playerIndex.Upsert(ctx, entries); err != nil {
-		log.Printf("[index] upsert error for %s: %v", bl.UserID, err)
-	} else {
-		log.Printf("[index] indexed %d players from %s", len(entries), bl.UserID)
+	// 4. Upsert characters
+	chars := make([]domain.PlayerCharacter, 0, len(seenChars))
+	for _, c := range seenChars {
+		chars = append(chars, c)
 	}
+	if err := s.players.UpsertCharacters(ctx, chars); err != nil {
+		log.Printf("[player] characters upsert error for %s: %v", bl.UserID, err)
+	}
+
+	log.Printf("[player] indexed %d players + %d characters from %s",
+		len(players), len(chars), bl.UserID)
 }
 
 // SearchPlayers returns players matching the query string.
-func (s *BattlelogService) SearchPlayers(ctx context.Context, query string) ([]domain.PlayerEntry, error) {
-	return s.playerIndex.Search(ctx, query)
+func (s *BattlelogService) SearchPlayers(ctx context.Context, query string) ([]domain.Player, error) {
+	return s.players.Search(ctx, query)
+}
+
+// GetPlayer returns a player by fighter_id.
+func (s *BattlelogService) GetPlayer(ctx context.Context, fighterID string) (*domain.Player, error) {
+	return s.players.GetByFighterID(ctx, fighterID)
+}
+
+// GetPlayerCharacters returns characters used by a player.
+func (s *BattlelogService) GetPlayerCharacters(ctx context.Context, shortID int64) ([]domain.PlayerCharacter, error) {
+	return s.players.GetCharacters(ctx, shortID)
 }
 
 // ReindexAll scans all saved battlelogs and rebuilds the player index.
@@ -493,7 +562,7 @@ func (s *BattlelogService) SyncAll(ctx context.Context, batchSize int) (synced, 
 	const skipIfNewerThan = 4 * time.Hour
 	start := time.Now()
 
-	userIDs, err := s.playerIndex.ListSyncableUserIDs(ctx)
+	userIDs, err := s.players.ListSyncableUserIDs(ctx)
 	if err != nil {
 		return 0, 0, fmt.Errorf("SyncAll: list syncable user IDs: %w", err)
 	}

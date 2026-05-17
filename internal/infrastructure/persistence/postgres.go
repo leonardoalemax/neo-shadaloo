@@ -152,6 +152,46 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			CONSTRAINT league_meta_singleton CHECK (id = 1)
 		)`,
 		`INSERT INTO league_meta (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
+		// ── player: dados ricos do jogador, alimentado pelo battlelog sync ──
+		`CREATE TABLE IF NOT EXISTS player (
+			short_id                     BIGINT  PRIMARY KEY,
+			fighter_id                   TEXT    NOT NULL,
+			platform_id                  INT     NOT NULL DEFAULT 0,
+			platform_name                TEXT    NOT NULL DEFAULT '',
+			platform_tool_name           TEXT    NOT NULL DEFAULT '',
+			home_id                      INT     NOT NULL DEFAULT 0,
+			favorite_character_tool_name TEXT    NOT NULL DEFAULT '',
+			favorite_character_name      TEXT    NOT NULL DEFAULT '',
+			league_point                 INT     NOT NULL DEFAULT 0,
+			league_rank                  INT     NOT NULL DEFAULT 0,
+			title_plate_name             TEXT    NOT NULL DEFAULT '',
+			title_val                    TEXT    NOT NULL DEFAULT '',
+			pp_fighting_ground           INT     NOT NULL DEFAULT 0,
+			pp_world_tour                INT     NOT NULL DEFAULT 0,
+			pp_battle_hub                INT     NOT NULL DEFAULT 0,
+			updated_at                   BIGINT  NOT NULL DEFAULT 0,
+			syncable                     BOOLEAN NOT NULL DEFAULT false
+		)`,
+		`CREATE INDEX IF NOT EXISTS player_fighter_id ON player (fighter_id)`,
+		`CREATE INDEX IF NOT EXISTS player_updated    ON player (updated_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS player_syncable   ON player (syncable) WHERE syncable = true`,
+		// ── player_character: personagens usados por cada jogador ──
+		`CREATE TABLE IF NOT EXISTS player_character (
+			short_id            BIGINT  NOT NULL,
+			character_tool_name TEXT    NOT NULL,
+			character_name      TEXT    NOT NULL DEFAULT '',
+			league_point        INT     NOT NULL DEFAULT 0,
+			league_rank         INT     NOT NULL DEFAULT 0,
+			last_seen_at        BIGINT  NOT NULL DEFAULT 0,
+			PRIMARY KEY (short_id, character_tool_name)
+		)`,
+		`CREATE INDEX IF NOT EXISTS player_character_char ON player_character (character_tool_name)`,
+		// migra dados existentes do player_index → player (idempotente)
+		`INSERT INTO player (short_id, fighter_id, updated_at, syncable)
+		 SELECT short_id, fighter_id, updated_at, syncable
+		 FROM player_index
+		 WHERE short_id > 0
+		 ON CONFLICT (short_id) DO NOTHING`,
 	}
 
 	for _, s := range steps {
