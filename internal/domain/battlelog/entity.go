@@ -142,6 +142,22 @@ type CharStat struct {
 	PriorityScore float64 `json:"priority_score"`
 }
 
+// TrainingSuggestion is an enriched opponent recommendation combining
+// personal battle stats, global usage rate, and official matchup data.
+type TrainingSuggestion struct {
+	Name          string  `json:"name"`
+	ToolName      string  `json:"tool_name"`
+	Total         int     `json:"total"`           // personal battles against this char
+	Wins          int     `json:"wins"`
+	Losses        int     `json:"losses"`
+	CleanLosses   int     `json:"clean_losses"`
+	CloseLosses   int     `json:"close_losses"`
+	WinRate       int     `json:"win_rate"`         // personal win rate
+	UsageRate     float64 `json:"usage_rate"`       // global usage rate in player's league (0–100)
+	MatchupWR     float64 `json:"matchup_wr"`       // official matchup WR for player's char vs this (0–100, 0 if unknown)
+	PriorityScore float64 `json:"priority_score"`   // final weighted score
+}
+
 type DayStat struct {
 	Wins  int `json:"wins"`
 	Total int `json:"total"`

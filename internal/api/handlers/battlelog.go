@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"math"
+	"sort"
 	"time"
 	"encoding/json"
 	"log"
@@ -11,7 +13,11 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	app "neo-shadaloo/internal/application/battlelog"
+	appfighting "neo-shadaloo/internal/application/fighting"
+	appusage "neo-shadaloo/internal/application/usage"
 	domain "neo-shadaloo/internal/domain/battlelog"
+	fightingDomain "neo-shadaloo/internal/domain/fighting"
+	usageDomain "neo-shadaloo/internal/domain/usage"
 	"neo-shadaloo/internal/infrastructure/realtime"
 )
 
@@ -514,5 +520,251 @@ func GetCharacters(svc *app.BattlelogService) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		json.NewEncoder(w).Encode(opts)
+	}
+}
+
+// GetTraining godoc
+//
+//	@Summary		Get training suggestions enriched with usage and matchup data
+//	@Description	Returns opponent characters ranked by training priority, combining personal battle stats, global character usage rate, and official matchup win rates.
+//	@Tags			battlelog
+//	@Produce		json
+//	@Param			userId		path		string	true	"SF6 fighter ID"
+//	@Param			character	query		string	false	"Filter by user's playing character tool_name"
+//	@Success		200			{array}		domain.TrainingSuggestion
+//	@Failure		400			{string}	string	"userId required"
+//	@Failure		500			{string}	string	"internal server error"
+//	@Router			/v1/battlelog/{userId}/training [get]
+func GetTraining(svc *app.BattlelogService, usageSvc *appusage.UsageService, fightingSvc *appfighting.FightingService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := chi.URLParam(r, "userId")
+		if userID == "" {
+			http.Error(w, "userId required", http.StatusBadRequest)
+			return
+		}
+		character := r.URL.Query().Get("character")
+
+		// 1. Get opponent stats (already filtered by character if provided)
+		opponents, err := svc.ComputeOpponents(r.Context(), userID, character)
+		if err != nil {
+			log.Printf("[handler] GetTraining opponents error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// 2. Determine the player's league rank and input type from profile
+		bl, err := svc.GetBattlelog(r.Context(), userID)
+		if err != nil {
+			log.Printf("[handler] GetTraining battlelog error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		playerLeagueRank := 0
+		playerInputType := 0
+		playerCharToolName := character
+
+		if bl.BannerInfo != nil {
+			playerLeagueRank = bl.BannerInfo.FavoriteCharacterLeagueInfo.LeagueRank
+			if playerCharToolName == "" {
+				playerCharToolName = bl.BannerInfo.FavoriteCharacterToolName
+			}
+		}
+		// Also try to get input type from most recent replay
+		for _, rep := range bl.Replays {
+			side := domain.FindUserSide(rep, userID)
+			if side == 0 {
+				continue
+			}
+			var info domain.PlayerInfo
+			if side == 1 {
+				info = rep.Player1Info
+			} else {
+				info = rep.Player2Info
+			}
+			if playerLeagueRank == 0 {
+				playerLeagueRank = info.LeagueRank
+			}
+			playerInputType = info.BattleInputType
+			if playerCharToolName == "" {
+				playerCharToolName = info.PlayingCharacterToolName
+			}
+			break
+		}
+
+		// 3. Get latest usage snapshot
+		usageByChar := make(map[string]float64) // tool_name → play_rate
+		months, err := usageSvc.GetAvailableMonths(r.Context())
+		if err == nil && len(months) > 0 {
+			snap, err := usageSvc.GetUsage(r.Context(), months[0])
+			if err == nil && snap != nil {
+				// Find matching league, fallback to closest
+				bestLeague := findClosestLeague(snap.Leagues, playerLeagueRank, playerInputType)
+				if bestLeague != nil {
+					for _, e := range bestLeague.Entries {
+						usageByChar[e.CharacterToolName] = e.PlayRate
+					}
+				}
+			}
+		}
+
+		// 4. Get latest fighting (matchup) snapshot
+		matchupByChar := make(map[string]float64) // opponent_tool_name → matchup WR for player's char
+		fMonths, err := fightingSvc.GetAvailableMonths(r.Context())
+		if err == nil && len(fMonths) > 0 {
+			fSnap, err := fightingSvc.GetFighting(r.Context(), fMonths[0])
+			if err == nil && fSnap != nil {
+				extractMatchups(fSnap.Leagues, playerLeagueRank, playerCharToolName, matchupByChar)
+			}
+		}
+
+		// 5. Build enriched suggestions
+		suggestions := make([]domain.TrainingSuggestion, 0, len(opponents))
+		for _, opp := range opponents {
+			s := domain.TrainingSuggestion{
+				Name:        opp.Name,
+				ToolName:    opp.ToolName,
+				Total:       opp.Total,
+				Wins:        opp.Wins,
+				Losses:      opp.Losses,
+				CleanLosses: opp.CleanLosses,
+				CloseLosses: opp.CloseLosses,
+				WinRate:     opp.WinRate,
+				UsageRate:   usageByChar[opp.ToolName],
+				MatchupWR:   matchupByChar[opp.ToolName],
+			}
+
+			// Priority score formula:
+			// Base = personal loss severity (clean losses × 3 + close losses × 1.5)
+			// × usage boost (popular chars matter more: 1 + usage/100)
+			// × matchup penalty (if official matchup is bad for player, boost priority)
+			//   matchup < 50 means player's char is disadvantaged
+			baseLoss := float64(s.CleanLosses)*3.0 + float64(s.CloseLosses)*1.5
+
+			// If player is already winning, reduce weight
+			lossWeight := 1.0
+			if s.WinRate >= 50 {
+				lossWeight = 0.5
+			}
+
+			// Usage multiplier: more popular chars = more important to train against
+			usageMult := 1.0 + s.UsageRate/100.0
+
+			// Matchup multiplier: if matchup is known and disadvantageous, boost
+			matchupMult := 1.0
+			if s.MatchupWR > 0 {
+				if s.MatchupWR < 50 {
+					// Bad matchup: boost priority (e.g., 45% → 1.1, 40% → 1.2, 35% → 1.3)
+					matchupMult = 1.0 + (50.0-s.MatchupWR)/50.0
+				} else {
+					// Good matchup: slightly reduce priority
+					matchupMult = 0.8 + 0.2*(50.0/math.Max(s.MatchupWR, 1))
+				}
+			}
+
+			// Volume factor: log scale so high-count opponents get a boost
+			volumeFactor := math.Log2(1 + float64(s.Total))
+
+			s.PriorityScore = baseLoss * lossWeight * usageMult * matchupMult * volumeFactor
+
+			suggestions = append(suggestions, s)
+		}
+
+		sort.Slice(suggestions, func(i, j int) bool {
+			return suggestions[i].PriorityScore > suggestions[j].PriorityScore
+		})
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(suggestions)
+	}
+}
+
+// findClosestLeague picks the league entry whose rank is closest to the player's rank.
+// Prefers same operation_type (0 = classic, 1 = modern). Falls back to operation_type 0.
+func findClosestLeague(leagues []usageDomain.LeagueUsage, playerRank, playerInputType int) *usageDomain.LeagueUsage {
+	if len(leagues) == 0 {
+		return nil
+	}
+
+	// Filter to operation_type 0 (classic/modern combined is type 0)
+	var candidates []usageDomain.LeagueUsage
+	for _, l := range leagues {
+		if l.OperationType == 0 {
+			candidates = append(candidates, l)
+		}
+	}
+	if len(candidates) == 0 {
+		candidates = leagues
+	}
+
+	if playerRank == 0 {
+		// Default to first entry
+		return &candidates[0]
+	}
+
+	var best *usageDomain.LeagueUsage
+	bestDist := math.MaxInt32
+	for i := range candidates {
+		d := abs(candidates[i].LeagueRank - playerRank)
+		if d < bestDist {
+			bestDist = d
+			best = &candidates[i]
+		}
+	}
+	return best
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// extractMatchups finds the matchup data for playerChar vs all opponents in the closest league.
+func extractMatchups(leagues []fightingDomain.LeagueFighting, playerRank int, playerChar string, out map[string]float64) {
+	if len(leagues) == 0 || playerChar == "" {
+		return
+	}
+
+	// Find closest league
+	var best *fightingDomain.LeagueFighting
+	bestDist := math.MaxInt32
+	for i := range leagues {
+		d := abs(leagues[i].LeagueRank - playerRank)
+		if d < bestDist {
+			bestDist = d
+			best = &leagues[i]
+		}
+	}
+	if best == nil {
+		return
+	}
+
+	// Build OID → tool_name map from opponent headers
+	oidToTool := make(map[int]string)
+	for _, h := range best.OpponentHeader {
+		oidToTool[h.ID] = h.ToolName
+	}
+
+	// Find the record for the player's character
+	for _, rec := range best.Records {
+		if rec.ToolName != playerChar {
+			continue
+		}
+		// rec.Values has the matchup win rates vs each opponent
+		for _, v := range rec.Values {
+			oppTool, ok := oidToTool[v.OID]
+			if !ok {
+				continue
+			}
+			wr, err := strconv.ParseFloat(v.Val, 64)
+			if err != nil {
+				continue
+			}
+			out[oppTool] = wr
+		}
+		break
 	}
 }
