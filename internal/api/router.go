@@ -8,14 +8,12 @@ import (
 
 	app "neo-shadaloo/internal/application/battlelog"
 	appfighting "neo-shadaloo/internal/application/fighting"
-	appleague "neo-shadaloo/internal/application/league"
-	appranking "neo-shadaloo/internal/application/ranking"
 	appusage "neo-shadaloo/internal/application/usage"
 	"neo-shadaloo/internal/api/handlers"
 	"neo-shadaloo/internal/infrastructure/realtime"
 )
 
-func NewRouter(svc *app.BattlelogService, usageSvc *appusage.UsageService, fightingSvc *appfighting.FightingService, rankingSvc *appranking.Service, leagueSvc *appleague.Service, hub *realtime.Hub) http.Handler {
+func NewRouter(svc *app.BattlelogService, usageSvc *appusage.UsageService, fightingSvc *appfighting.FightingService, hub *realtime.Hub) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -46,24 +44,6 @@ func NewRouter(svc *app.BattlelogService, usageSvc *appusage.UsageService, fight
 	r.Get("/v1/fighting/months", handlers.GetFightingMonths(fightingSvc))
 	r.Get("/v1/fighting/{yyyymm}", handlers.GetFighting(fightingSvc))
 	r.Post("/v1/fighting/{yyyymm}/sync", handlers.PostFightingSync(fightingSvc))
-
-	// Ranking global (snapshot atual). 4 tipos: league_point, arcade_score, kudos, master_rating
-	r.Post("/v1/ranking/sync", handlers.PostRankingSyncAll(rankingSvc))
-	r.Post("/v1/ranking/{type}/sync", handlers.PostRankingSync(rankingSvc))
-	r.Get("/v1/ranking/{type}/status", handlers.GetRankingStatus(rankingSvc))
-	// Visualização
-	r.Get("/v1/ranking/{type}", handlers.GetRanking(rankingSvc))
-	r.Get("/v1/ranking/{type}/facets", handlers.GetRankingFacets(rankingSvc))
-	r.Get("/v1/ranking/{type}/player/{short_id}", handlers.GetRankingByPlayer(rankingSvc))
-	r.Get("/v1/ranking/{type}/around/{order}", handlers.GetRankingAround(rankingSvc))
-	r.Get("/v1/ranking/{type}/players-by-country", handlers.GetRankingPlayersByCountry(rankingSvc))
-
-	// League (ranking dedicado, tabela league_player com upsert por short_id)
-	r.Post("/v1/league/sync", handlers.PostLeagueSync(leagueSvc))
-	r.Get("/v1/league/status", handlers.GetLeagueStatus(leagueSvc))
-	r.Get("/v1/league/players-by-country", handlers.GetLeaguePlayersByCountry(leagueSvc))
-	r.Get("/v1/league/characters", handlers.GetLeagueCharacters(leagueSvc))
-	r.Get("/v1/league/ranks", handlers.GetLeagueRanks(leagueSvc))
 
 	return r
 }

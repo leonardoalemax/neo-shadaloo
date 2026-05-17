@@ -25,8 +25,6 @@ import (
 	"neo-shadaloo/internal/api"
 	app "neo-shadaloo/internal/application/battlelog"
 	appfighting "neo-shadaloo/internal/application/fighting"
-	appleague "neo-shadaloo/internal/application/league"
-	appranking "neo-shadaloo/internal/application/ranking"
 	appusage "neo-shadaloo/internal/application/usage"
 	"neo-shadaloo/internal/infrastructure/persistence"
 	"neo-shadaloo/internal/infrastructure/realtime"
@@ -54,7 +52,6 @@ func main() {
 	}
 	logEnv("DATABASE_URL", true)
 	logEnv("SF6_COOKIE", true)
-	logEnv("KAFKA_BROKER", false)
 	logEnv("PORT", false)
 
 	// Loga só o host parseado do DATABASE_URL (sem credenciais)
@@ -78,8 +75,6 @@ func main() {
 	playerIndexRepo := persistence.NewPlayerIndexRepository(persistence.Pool)
 	usageRepo := persistence.NewUsageRepository(persistence.Pool)
 	fightingRepo := persistence.NewFightingRepository(persistence.Pool)
-	rankingRepo := persistence.NewRankingRepository(persistence.Pool)
-	leagueRepo := persistence.NewLeagueRepository(persistence.Pool)
 	hub := realtime.NewHub()
 	sf6Client := sf6.NewClient(cfgRepo)
 
@@ -87,17 +82,9 @@ func main() {
 	svc := app.NewBattlelogService(battlelogRepo, playerIndexRepo, sf6Client, hub)
 	usageSvc := appusage.NewUsageService(usageRepo, sf6Client)
 	fightingSvc := appfighting.NewFightingService(fightingRepo, sf6Client)
-	rankingSvc := appranking.NewService(rankingRepo, sf6Client, playerIndexRepo)
-	leagueSvc := appleague.NewService(leagueRepo, sf6Client, playerIndexRepo)
-
-	// ── Kafka consumers (ranking) ────────────────────────────────────────────
-	if err := rankingSvc.InitKafka(ctx); err != nil {
-		log.Printf("Kafka init warning (ranking sync): %v", err)
-	}
-	// league sync usa pool de goroutines com rate limiter (sem Kafka)
 
 	// ── API ──────────────────────────────────────────────────────────────────
-	router := api.NewRouter(svc, usageSvc, fightingSvc, rankingSvc, leagueSvc, hub)
+	router := api.NewRouter(svc, usageSvc, fightingSvc, hub)
 
 	// Swagger UI at /docs/
 	http.Handle("/docs/", httpswagger.WrapHandler)
