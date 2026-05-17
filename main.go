@@ -90,13 +90,11 @@ func main() {
 	rankingSvc := appranking.NewService(rankingRepo, sf6Client, playerIndexRepo)
 	leagueSvc := appleague.NewService(leagueRepo, sf6Client, playerIndexRepo)
 
-	// ── Kafka consumers ──────────────────────────────────────────────────────
+	// ── Kafka consumers (ranking) ────────────────────────────────────────────
 	if err := rankingSvc.InitKafka(ctx); err != nil {
 		log.Printf("Kafka init warning (ranking sync): %v", err)
 	}
-	if err := leagueSvc.InitKafka(ctx); err != nil {
-		log.Printf("Kafka init warning (league sync): %v", err)
-	}
+	// league sync usa pool de goroutines com rate limiter (sem Kafka)
 
 	// ── API ──────────────────────────────────────────────────────────────────
 	router := api.NewRouter(svc, usageSvc, fightingSvc, rankingSvc, leagueSvc, hub)

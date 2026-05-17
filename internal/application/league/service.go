@@ -2,37 +2,39 @@ package league
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"log"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	kafkago "github.com/segmentio/kafka-go"
+	"golang.org/x/time/rate"
 
 	battlelog "neo-shadaloo/internal/domain/battlelog"
 	domain "neo-shadaloo/internal/domain/league"
 	rankingdomain "neo-shadaloo/internal/domain/ranking"
-	kafkainfra "neo-shadaloo/internal/infrastructure/kafka"
 )
 
 const (
-	workerCount = 20
-	retryPause  = 5 * time.Minute
+	// Concorrência máxima de requests simultâneos.
+	maxConcurrency = 10
+	// Rate limit: requests por segundo (evita 405).
+	reqPerSecond = 5
+	// Pausa ao tomar 405 (backoff antes de retomar).
+	backoff405 = 30 * time.Second
+	// Máximo de retries por página antes de pular.
+	maxRetries = 5
 )
 
-// Service sincroniza o ranking league_point usando Kafka + tabela league_player.
+// Service sincroniza o ranking league_point usando pool de goroutines + rate limiter.
 type Service struct {
 	repo        domain.Repository
-	sf6         rankingdomain.SF6Client // reusa o client de ranking pra fetch
+	sf6         rankingdomain.SF6Client
 	playerIndex battlelog.PlayerIndexRepository
-
-	writer *kafkago.Writer
+	limiter     *rate.Limiter
 
 	mu      sync.Mutex
 	running bool
+	cancel  context.CancelFunc
 }
 
 func NewService(repo domain.Repository, sf6 rankingdomain.SF6Client, playerIndex battlelog.PlayerIndexRepository) *Service {
@@ -40,24 +42,11 @@ func NewService(repo domain.Repository, sf6 rankingdomain.SF6Client, playerIndex
 		repo:        repo,
 		sf6:         sf6,
 		playerIndex: playerIndex,
+		limiter:     rate.NewLimiter(rate.Limit(reqPerSecond), maxConcurrency),
 	}
 }
 
-// InitKafka inicializa writer + consumers.
-func (s *Service) InitKafka(ctx context.Context) error {
-	if err := kafkainfra.EnsureTopicNamed(ctx, kafkainfra.TopicLeagueSync, workerCount); err != nil {
-		log.Printf("[league] kafka: falha ao garantir topic: %v", err)
-	}
-	s.writer = kafkainfra.NewWriterFor(kafkainfra.TopicLeagueSync)
-	for i := 0; i < workerCount; i++ {
-		go s.consumeLoop(ctx, i)
-	}
-	log.Printf("[league] kafka: %d consumers iniciados", workerCount)
-	return nil
-}
-
-// TriggerSync busca página 1, descobre totalPages, enfileira páginas 2..N.
-// NÃO apaga dados antigos — players são upserted.
+// TriggerSync dispara o sync em background. Se já estiver rodando, ignora.
 func (s *Service) TriggerSync() {
 	s.mu.Lock()
 	if s.running {
@@ -66,16 +55,27 @@ func (s *Service) TriggerSync() {
 		return
 	}
 	s.running = true
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
 	s.mu.Unlock()
 
 	go func() {
-		if err := s.produce(context.Background()); err != nil {
-			log.Printf("[league] produce falhou: %v", err)
-			s.mu.Lock()
-			s.running = false
-			s.mu.Unlock()
-		}
+		s.runSync(ctx)
+		s.mu.Lock()
+		s.running = false
+		s.cancel = nil
+		s.mu.Unlock()
 	}()
+}
+
+// StopSync cancela o sync em curso.
+func (s *Service) StopSync() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancel != nil {
+		s.cancel()
+		log.Printf("[league] sync cancelado pelo usuário")
+	}
 }
 
 func (s *Service) IsRunning() bool {
@@ -84,84 +84,169 @@ func (s *Service) IsRunning() bool {
 	return s.running
 }
 
-func (s *Service) produce(ctx context.Context) error {
+func (s *Service) runSync(ctx context.Context) {
 	startedAt := time.Now().Unix()
-	log.Printf("[league] iniciando sync (producing pages)")
+	log.Printf("[league] iniciando sync")
 
+	// 1. Busca página 1 pra saber totalPages
+	if err := s.limiter.Wait(ctx); err != nil {
+		return
+	}
 	first, err := s.sf6.FetchRankingPage(ctx, rankingdomain.RankingLeague, 1)
 	if err != nil {
+		log.Printf("[league] erro ao buscar página 1: %v", err)
 		_ = s.repo.SaveMeta(ctx, domain.SyncMeta{
 			UpdatedAt: time.Now().Unix(), StartedAt: startedAt, Status: "failed",
 		})
-		return err
+		return
 	}
+
 	totalPages := first.TotalPages
 	totalCount := first.TotalCount
 	log.Printf("[league] total_pages=%d total_count=%d", totalPages, totalCount)
 
+	// 2. Verifica se há sync anterior pra resume
+	meta, _ := s.repo.GetMeta(ctx)
+	resumeFrom := 1
+	if meta != nil && meta.Status == "running" && meta.SyncedPages > 0 && meta.TotalPages == totalPages {
+		resumeFrom = meta.SyncedPages + 1
+		log.Printf("[league] resumindo do sync anterior — página %d/%d", resumeFrom, totalPages)
+	}
+
 	_ = s.repo.SaveMeta(ctx, domain.SyncMeta{
-		TotalCount: totalCount, TotalPages: totalPages, SyncedPages: 0,
+		TotalCount: totalCount, TotalPages: totalPages, SyncedPages: resumeFrom - 1,
 		UpdatedAt: time.Now().Unix(), StartedAt: startedAt, Status: "running",
 	})
 
-	// Persiste página 1
-	s.persistPage(ctx, first.Entries)
-
-	if totalPages > 1 {
-		if err := kafkainfra.ProduceLeaguePages(ctx, s.writer, 2, totalPages, totalCount, startedAt); err != nil {
-			return err
-		}
+	// Persiste página 1 (se não é resume ou resume a partir de 1)
+	if resumeFrom <= 1 {
+		s.persistPage(ctx, first.Entries)
+		resumeFrom = 2
 	}
-	return nil
-}
 
-func (s *Service) consumeLoop(ctx context.Context, workerID int) {
-	reader := kafkainfra.NewReaderFor(kafkainfra.TopicLeagueSync, "league-sync-consumers")
-	defer reader.Close()
-	log.Printf("[league] kafka worker=%d: consumer iniciado", workerID)
+	if totalPages < 2 {
+		s.finishSync(ctx, totalCount, totalPages, startedAt)
+		return
+	}
 
-	for {
-		msg, err := reader.FetchMessage(ctx)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
+	// 3. Pool de goroutines com semáforo
+	sem := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+	var syncedPages int64
+	var syncedMu sync.Mutex
+
+	// Canal pra páginas
+	pages := make(chan int, maxConcurrency*2)
+
+	// Producer: enfileira páginas
+	go func() {
+		defer close(pages)
+		for p := resumeFrom; p <= totalPages; p++ {
+			select {
+			case pages <- p:
+			case <-ctx.Done():
 				return
 			}
-			log.Printf("[league] worker=%d fetch erro: %v", workerID, err)
-			time.Sleep(time.Second)
-			continue
+		}
+	}()
+
+	// Workers
+	for page := range pages {
+		if ctx.Err() != nil {
+			break
 		}
 
-		var pm kafkainfra.LeaguePageMessage
-		if err := json.Unmarshal(msg.Value, &pm); err != nil {
-			log.Printf("[league] worker=%d decode erro: %v", workerID, err)
-			_ = reader.CommitMessages(ctx, msg)
-			continue
+		sem <- struct{}{}
+		wg.Add(1)
+
+		go func(pg int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			s.fetchAndPersist(ctx, pg, totalPages)
+
+			syncedMu.Lock()
+			syncedPages++
+			done := int(syncedPages)
+			syncedMu.Unlock()
+
+			// Atualiza progresso a cada 50 páginas
+			if done%50 == 0 || pg == totalPages {
+				_ = s.repo.SaveMeta(ctx, domain.SyncMeta{
+					TotalCount:  totalCount,
+					TotalPages:  totalPages,
+					SyncedPages: (resumeFrom - 1) + done,
+					UpdatedAt:   time.Now().Unix(),
+					StartedAt:   startedAt,
+					Status:      "running",
+				})
+				log.Printf("[league] progresso %d/%d páginas (%.1f%%)",
+					(resumeFrom-1)+done, totalPages,
+					float64((resumeFrom-1)+done)/float64(totalPages)*100)
+			}
+		}(page)
+	}
+
+	wg.Wait()
+
+	if ctx.Err() != nil {
+		log.Printf("[league] sync cancelado")
+		return
+	}
+
+	s.finishSync(ctx, totalCount, totalPages, startedAt)
+}
+
+func (s *Service) fetchAndPersist(ctx context.Context, page, totalPages int) {
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if ctx.Err() != nil {
+			return
+		}
+
+		// Rate limiter — espera slot disponível
+		if err := s.limiter.Wait(ctx); err != nil {
+			return
 		}
 
 		reqStart := time.Now()
-		pg, fetchErr := s.sf6.FetchRankingPage(ctx, rankingdomain.RankingLeague, pm.Page)
-		if fetchErr != nil {
-			if strings.Contains(fetchErr.Error(), "405") {
-				log.Printf("[league] pg=%d worker=%d GOT 405 — pausando %s", pm.Page, workerID, retryPause)
-				time.Sleep(retryPause)
-				continue // NÃO commita
+		pg, err := s.sf6.FetchRankingPage(ctx, rankingdomain.RankingLeague, page)
+		if err != nil {
+			if strings.Contains(err.Error(), "405") {
+				log.Printf("[league] pg=%d GOT 405 — backoff %s (attempt %d/%d)",
+					page, backoff405, attempt+1, maxRetries)
+				select {
+				case <-time.After(backoff405):
+				case <-ctx.Done():
+					return
+				}
+				continue
 			}
-			log.Printf("[league] pg=%d worker=%d erro: %v (skipping)", pm.Page, workerID, fetchErr)
-			_ = reader.CommitMessages(ctx, msg)
+			log.Printf("[league] pg=%d erro: %v (attempt %d/%d)", page, err, attempt+1, maxRetries)
+			time.Sleep(2 * time.Second)
 			continue
 		}
 
-		log.Printf("[league] pg=%d/%d worker=%d entries=%d took=%s",
-			pm.Page, pm.TotalPages, workerID, len(pg.Entries), time.Since(reqStart).Round(time.Millisecond))
+		log.Printf("[league] pg=%d/%d entries=%d took=%s",
+			page, totalPages, len(pg.Entries), time.Since(reqStart).Round(time.Millisecond))
 
 		s.persistPage(ctx, pg.Entries)
-
-		if err := reader.CommitMessages(ctx, msg); err != nil {
-			log.Printf("[league] worker=%d commit erro: %v", workerID, err)
-		}
-
-		s.updateProgress(ctx, pm)
+		return
 	}
+
+	log.Printf("[league] pg=%d DESISTINDO após %d tentativas", page, maxRetries)
+}
+
+func (s *Service) finishSync(ctx context.Context, totalCount, totalPages int, startedAt int64) {
+	_ = s.repo.SaveMeta(ctx, domain.SyncMeta{
+		TotalCount:   totalCount,
+		TotalPages:   totalPages,
+		SyncedPages:  totalPages,
+		UpdatedAt:    time.Now().Unix(),
+		StartedAt:    startedAt,
+		LastSyncedAt: time.Now().Unix(),
+		Status:       "done",
+	})
+	log.Printf("[league] sync COMPLETO — %d páginas", totalPages)
 }
 
 // persistPage converte entries → players e upserta + indexa player_index.
@@ -223,52 +308,6 @@ func (s *Service) indexPlayers(ctx context.Context, players []domain.Player) {
 			log.Printf("[league] player_index upsert falhou (%d players): %v", len(p), err)
 		}
 	}(out)
-}
-
-var progressTicker atomic.Int64
-
-func (s *Service) updateProgress(ctx context.Context, pm kafkainfra.LeaguePageMessage) {
-	if progressTicker.Add(1)%50 != 0 {
-		return
-	}
-	// synced_pages derivado: total de players / 10 (10 por página)
-	// Aqui usamos CountPlayers como proxy. Não é exato (mesmo player em páginas
-	// diferentes é único), mas dá uma referência de progresso.
-	count, err := s.repo.CountPlayers(ctx)
-	if err != nil {
-		log.Printf("[league] count players erro: %v", err)
-		return
-	}
-	synced := count / 10
-	if synced > pm.TotalPages {
-		synced = pm.TotalPages
-	}
-
-	status := "running"
-	var finishedAt int64
-	if synced >= pm.TotalPages {
-		status = "done"
-		finishedAt = time.Now().Unix()
-	}
-
-	_ = s.repo.SaveMeta(ctx, domain.SyncMeta{
-		TotalCount:   pm.TotalCount,
-		TotalPages:   pm.TotalPages,
-		SyncedPages:  synced,
-		UpdatedAt:    time.Now().Unix(),
-		StartedAt:    pm.StartedAt,
-		LastSyncedAt: finishedAt,
-		Status:       status,
-	})
-	log.Printf("[league] progresso %d/%d páginas (%.1f%%) — %d players",
-		synced, pm.TotalPages, float64(synced)/float64(pm.TotalPages)*100, count)
-
-	if status == "done" {
-		s.mu.Lock()
-		s.running = false
-		s.mu.Unlock()
-		log.Printf("[league] sync COMPLETO")
-	}
 }
 
 // ── Read methods (pra handlers) ──────────────────────────────────────────────
