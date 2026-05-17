@@ -329,6 +329,34 @@ func GetHourlyStats(svc *app.BattlelogService) http.HandlerFunc {
 	}
 }
 
+// GetWeeklyHeatmap godoc
+//
+//	@Summary		Get weekly heatmap (weekday × hour)
+//	@Description	Returns win/loss counts grouped by weekday and hour for a 7×24 heatmap.
+//	@Tags			battlelog
+//	@Produce		json
+//	@Param			userId	path		string					true	"SF6 fighter ID"
+//	@Success		200		{object}	domain.WeeklyHeatmap
+//	@Router			/v1/battlelog/{userId}/weekly [get]
+func GetWeeklyHeatmap(svc *app.BattlelogService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := chi.URLParam(r, "userId")
+		if userID == "" {
+			http.Error(w, "userId required", http.StatusBadRequest)
+			return
+		}
+		stats, err := svc.ComputeWeeklyHeatmap(r.Context(), userID)
+		if err != nil {
+			log.Printf("[handler] GetWeeklyHeatmap error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(stats)
+	}
+}
+
 // GetLPHistory godoc
 //
 //	@Summary		Get LP evolution history for a user

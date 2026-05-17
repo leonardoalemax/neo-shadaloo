@@ -30,6 +30,7 @@ func NewRouter(svc *app.BattlelogService, usageSvc *appusage.UsageService, fight
 	r.Get("/v1/battlelog/{userId}/character-ranks", handlers.GetCharacterRanks(svc))
 	r.Get("/v1/battlelog/{userId}/lp-history", handlers.GetLPHistory(svc))
 	r.Get("/v1/battlelog/{userId}/hourly", handlers.GetHourlyStats(svc))
+	r.Get("/v1/battlelog/{userId}/weekly", handlers.GetWeeklyHeatmap(svc))
 	r.Post("/v1/battlelog/{userId}/sync", handlers.PostSync(svc))
 	r.Get("/v1/battlelog/{userId}/ws", handlers.GetWS(hub))
 

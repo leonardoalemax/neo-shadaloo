@@ -198,6 +198,12 @@ type HourlyStats struct {
 	Hours [24]HourStat `json:"hours"`
 }
 
+// WeeklyHeatmap holds win/loss per (weekday, hour) — 7 days × 24 hours.
+type WeeklyHeatmap struct {
+	// Days[0]=Dom, Days[1]=Seg, ..., Days[6]=Sáb
+	Days [7][24]HourStat `json:"days"`
+}
+
 // LPEntry holds the LP value for a given day (last recorded match of that day).
 type LPEntry struct {
 	Date string `json:"date"` // YYYY-MM-DD

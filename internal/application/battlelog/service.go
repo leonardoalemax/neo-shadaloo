@@ -324,6 +324,37 @@ func (s *BattlelogService) ComputeHourlyStats(ctx context.Context, userID string
 	return &result, nil
 }
 
+// ComputeWeeklyHeatmap returns win/loss grouped by (weekday, hour).
+func (s *BattlelogService) ComputeWeeklyHeatmap(ctx context.Context, userID string) (*domain.WeeklyHeatmap, error) {
+	bl, err := s.GetBattlelog(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	var result domain.WeeklyHeatmap
+	for d := 0; d < 7; d++ {
+		for h := 0; h < 24; h++ {
+			result.Days[d][h].Hour = h
+		}
+	}
+
+	for _, r := range bl.Replays {
+		side := domain.FindUserSide(r, userID)
+		if side == 0 {
+			continue
+		}
+		t := time.Unix(r.UploadedAt, 0)
+		dow := int(t.Weekday()) // 0=Sun
+		h := t.Hour()
+		result.Days[dow][h].Total++
+		if domain.GetWinner(r) == side {
+			result.Days[dow][h].Wins++
+		}
+	}
+
+	return &result, nil
+}
+
 // ComputeLPHistory returns LP per day for userID filtered by character (playing_character_tool_name).
 // Replays are sorted newest-first, so the first occurrence of each date is the last match of that day.
 func (s *BattlelogService) ComputeLPHistory(ctx context.Context, userID, character string) (*domain.LPHistory, error) {
