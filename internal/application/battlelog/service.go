@@ -185,7 +185,8 @@ func (s *BattlelogService) ComputeStats(ctx context.Context, userID string) (*do
 }
 
 // ComputeOpponents returns per-opponent-character stats sorted by total battles desc.
-func (s *BattlelogService) ComputeOpponents(ctx context.Context, userID string) ([]domain.CharStat, error) {
+// If character is non-empty, only replays where the user played that character are included.
+func (s *BattlelogService) ComputeOpponents(ctx context.Context, userID string, character string) ([]domain.CharStat, error) {
 	bl, err := s.GetBattlelog(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -207,6 +208,11 @@ func (s *BattlelogService) ComputeOpponents(ctx context.Context, userID string) 
 		} else {
 			opponent = r.Player1Info
 			userInfo = r.Player2Info
+		}
+
+		// Filter by user's character if requested
+		if character != "" && userInfo.PlayingCharacterToolName != character {
+			continue
 		}
 
 		key := opponent.PlayingCharacterToolName

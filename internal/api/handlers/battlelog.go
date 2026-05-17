@@ -194,7 +194,8 @@ func GetOpponents(svc *app.BattlelogService) http.HandlerFunc {
 			http.Error(w, "userId required", http.StatusBadRequest)
 			return
 		}
-		stats, err := svc.ComputeOpponents(r.Context(), userID)
+		character := r.URL.Query().Get("character")
+		stats, err := svc.ComputeOpponents(r.Context(), userID, character)
 		if err != nil {
 			log.Printf("[handler] GetOpponents error: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
