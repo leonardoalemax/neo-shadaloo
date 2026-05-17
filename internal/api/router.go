@@ -62,6 +62,7 @@ func NewRouter(svc *app.BattlelogService, usageSvc *appusage.UsageService, fight
 	r.Post("/v1/league/sync", handlers.PostLeagueSync(leagueSvc))
 	r.Get("/v1/league/status", handlers.GetLeagueStatus(leagueSvc))
 	r.Get("/v1/league/players-by-country", handlers.GetLeaguePlayersByCountry(leagueSvc))
+	r.Get("/v1/league/characters", handlers.GetLeagueCharacters(leagueSvc))
 
 	return r
 }

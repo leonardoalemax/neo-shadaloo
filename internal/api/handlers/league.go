@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	app "neo-shadaloo/internal/application/league"
 	dleague "neo-shadaloo/internal/domain/league"
@@ -58,11 +59,41 @@ func GetLeagueStatus(svc *app.Service) http.HandlerFunc {
 //	@Summary		Players por país (league)
 //	@Tags			league
 //	@Produce		json
+//	@Param			character	query	string	false	"Filtrar por character_tool_name (ex: ryu)"
+//	@Param			league_rank	query	int		false	"Filtrar por league_rank exato"
 //	@Success		200	{array}	dleague.CountryPlayerCount
 //	@Router			/v1/league/players-by-country [get]
 func GetLeaguePlayersByCountry(svc *app.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		out, err := svc.PlayersByCountry(r.Context())
+		q := r.URL.Query()
+		var f dleague.MapFilter
+		f.Character = q.Get("character")
+		if v := q.Get("league_rank"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				f.LeagueRank = n
+			}
+		}
+
+		out, err := svc.PlayersByCountry(r.Context(), f)
+		if err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
+	}
+}
+
+// GetLeagueCharacters devolve personagens distintos com contagem de players.
+//
+//	@Summary		Personagens distintos (league)
+//	@Tags			league
+//	@Produce		json
+//	@Success		200	{array}	dleague.CharacterCount
+//	@Router			/v1/league/characters [get]
+func GetLeagueCharacters(svc *app.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		out, err := svc.DistinctCharacters(r.Context())
 		if err != nil {
 			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 			return

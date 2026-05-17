@@ -277,6 +277,10 @@ func (s *Service) GetMeta(ctx context.Context) (*domain.SyncMeta, error) {
 	return s.repo.GetMeta(ctx)
 }
 
-func (s *Service) PlayersByCountry(ctx context.Context) ([]domain.CountryPlayerCount, error) {
-	return s.repo.PlayersByCountry(ctx)
+func (s *Service) PlayersByCountry(ctx context.Context, f domain.MapFilter) ([]domain.CountryPlayerCount, error) {
+	return s.repo.PlayersByCountry(ctx, f)
+}
+
+func (s *Service) DistinctCharacters(ctx context.Context) ([]domain.CharacterCount, error) {
+	return s.repo.DistinctCharacters(ctx)
 }

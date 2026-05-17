@@ -137,6 +137,8 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS league_player_home  ON league_player (home_id) WHERE home_id > 0`,
 		`CREATE INDEX IF NOT EXISTS league_player_order ON league_player (order_no)`,
+		`CREATE INDEX IF NOT EXISTS league_player_char  ON league_player (character_tool_name) WHERE character_tool_name <> ''`,
+		`CREATE INDEX IF NOT EXISTS league_player_rank  ON league_player (league_rank)`,
 		// league_meta: singleton (id=1) com estado do sync.
 		`CREATE TABLE IF NOT EXISTS league_meta (
 			id               INT    PRIMARY KEY DEFAULT 1,

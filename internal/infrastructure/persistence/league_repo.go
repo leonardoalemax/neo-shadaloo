@@ -98,18 +98,35 @@ func (r *LeagueRepository) GetMeta(ctx context.Context) (*domain.SyncMeta, error
 	return &m, nil
 }
 
-func (r *LeagueRepository) PlayersByCountry(ctx context.Context) ([]domain.CountryPlayerCount, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *LeagueRepository) PlayersByCountry(ctx context.Context, f domain.MapFilter) ([]domain.CountryPlayerCount, error) {
+	where := "lp.home_id > 0"
+	args := []any{}
+	idx := 1
+
+	if f.Character != "" {
+		where += fmt.Sprintf(" AND lp.character_tool_name = $%d", idx)
+		args = append(args, f.Character)
+		idx++
+	}
+	if f.LeagueRank > 0 {
+		where += fmt.Sprintf(" AND lp.league_rank = $%d", idx)
+		args = append(args, f.LeagueRank)
+		idx++
+	}
+
+	q := fmt.Sprintf(`
 		SELECT lp.home_id,
 		       COALESCE(hc.name, '') AS country_name,
 		       COALESCE(hc.iso3, '') AS iso3,
 		       COUNT(DISTINCT lp.short_id) AS player_count
 		FROM league_player lp
 		LEFT JOIN home_country hc ON hc.home_id = lp.home_id
-		WHERE lp.home_id > 0
+		WHERE %s
 		GROUP BY lp.home_id, hc.name, hc.iso3
 		ORDER BY player_count DESC
-	`)
+	`, where)
+
+	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +136,30 @@ func (r *LeagueRepository) PlayersByCountry(ctx context.Context) ([]domain.Count
 	for rows.Next() {
 		var c domain.CountryPlayerCount
 		if err := rows.Scan(&c.HomeID, &c.CountryName, &c.ISO3, &c.PlayerCount); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+func (r *LeagueRepository) DistinctCharacters(ctx context.Context) ([]domain.CharacterCount, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT character_tool_name, character_name, COUNT(*) AS player_count
+		FROM league_player
+		WHERE character_tool_name <> ''
+		GROUP BY character_tool_name, character_name
+		ORDER BY player_count DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []domain.CharacterCount
+	for rows.Next() {
+		var c domain.CharacterCount
+		if err := rows.Scan(&c.CharacterToolName, &c.CharacterName, &c.PlayerCount); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

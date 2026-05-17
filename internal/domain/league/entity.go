@@ -40,3 +40,16 @@ type CountryPlayerCount struct {
 	ISO3        string `json:"iso3"`
 	PlayerCount int    `json:"player_count"`
 }
+
+// MapFilter reúne filtros opcionais para o endpoint players-by-country.
+type MapFilter struct {
+	Character string // character_tool_name (ex: "ryu")
+	LeagueRank int   // league_rank exato (0 = sem filtro)
+}
+
+// CharacterCount representa um personagem e quantos players o usam.
+type CharacterCount struct {
+	CharacterToolName string `json:"character_tool_name"`
+	CharacterName     string `json:"character_name"`
+	PlayerCount       int    `json:"player_count"`
+}
