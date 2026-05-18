@@ -104,7 +104,7 @@ type ReplayFilter struct {
 	Character  string // playing_character_tool_name of the user
 	DateFrom   int64  // unix seconds, inclusive (0 = no limit)
 	DateTo     int64  // unix seconds, inclusive (0 = no limit)
-	BattleType int    // 0 = all, 1 = ranked, 6 = custom room
+	BattleType int    // 0 = all, 1 = ranked, 2 = casual, 3 = battle hub, 4 = custom room
 }
 
 // CharacterOption is a unique character played by a user.
